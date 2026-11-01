@@ -97,8 +97,30 @@ pub fn audit(ehnd:&Ehnd)->ControlAudit{
 #[cfg(test)]
 mod tests{
     use super::*;
-    #[test]fn empty_directives(){
-        let mut ehnd=Ehnd::load as usize;
-        let _=&mut ehnd;
+    use std::fs;
+    #[test]
+    fn structural_control_links(){
+        let dir=std::env::temp_dir().join(format!("ehnd-control-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for (name,text) in [
+            ("ehnd_conf.ini","PREFILTER_SWITCH=ON\n"),
+            ("PreFilter_@Hdor.txt",
+                "_TGL\t_ON:ABC\tpattern\tx\t120\t1\n_TGL\t_CONN:ABC\tpattern\tx\t120\t1\n_skip_sub\tbar\tx\t100\t0\n"),
+            ("PreFilter_@Hdor_C.txt",""),
+            ("PostFilter_@Hdor.txt","_SkipLayer\tfoo\ty\t200\t1\n"),
+            ("PostFilter_@Hdor_C.txt",""),
+        ]{fs::write(dir.join(name),text).unwrap();}
+        let ehnd=Ehnd::load(&dir).unwrap();
+        let report=audit(&ehnd);
+        assert_eq!(report.total_directives,4);
+        assert_eq!(report.control_ids,1);
+        assert_eq!(report.ids_linked_on_and_conn,1);
+        assert_eq!(report.ids_conn_without_on,0);
+        assert_eq!(report.malformed_or_unknown,0);
+        for name in [
+            "ehnd_conf.ini","PreFilter_@Hdor.txt","PreFilter_@Hdor_C.txt",
+            "PostFilter_@Hdor.txt","PostFilter_@Hdor_C.txt"
+        ]{fs::remove_file(dir.join(name)).unwrap();}
+        fs::remove_dir(dir).unwrap();
     }
 }
