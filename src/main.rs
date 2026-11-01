@@ -45,6 +45,9 @@ fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
     if flag(args,"--passthrough") && engine != EngineMode::Passthrough {
         bail!("--passthrough와 --engine 값이 충돌합니다");
     }
+    if flag(args,"--ehnd-regex-strict") && !flag(args,"--ehnd-regex-experimental") {
+        bail!("--ehnd-regex-strict는 --ehnd-regex-experimental과 함께 사용해야 합니다");
+    }
     let translator=create_engine(&EngineConfig {
         mode:engine,
         eztrans_dir:dll_path,
