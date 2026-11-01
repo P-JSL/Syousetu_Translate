@@ -2,6 +2,16 @@ mod engine;mod filter;mod network;mod output;mod site;
 use anyhow::{bail,Context,Result};
 use std::{env,fs,path::{Path,PathBuf}};
 use engine::{EngineConfig,EngineMode,create_engine};
+use syousetu_translate::ehnd::{Ehnd, Phase};
+struct EhndLiteralComparison { inner:Box<dyn engine::Translator>, filters:Ehnd }
+impl engine::Translator for EhndLiteralComparison {
+    fn translate(&mut self,text:&str)->Result<String> {
+        let pre=self.filters.apply_literal(Phase::Pre,text)?;
+        let translated=self.inner.translate(&pre)?;
+        self.filters.apply_literal(Phase::Post,&translated)
+    }
+}
+
 use filter::{Dictionary,Pipeline};
 use network::Fetcher;
 use site::{parse_work,parse_episode,canonicalize};
@@ -25,12 +35,22 @@ fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
     if flag(args,"--passthrough") && engine != EngineMode::Passthrough {
         bail!("--passthrough와 --engine 값이 충돌합니다");
     }
-    create_engine(&EngineConfig {
+    let translator=create_engine(&EngineConfig {
         mode:engine,
         eztrans_dir:dll_path,
         native_dictionary:value(args,"--native-dictionary").map(PathBuf::from),
         strict_native:flag(args,"--native-strict"),
-    })
+    })?;
+    if flag(args,"--ehnd-literal-only") {
+        if engine!=EngineMode::Native {bail!("EHND 리터럴 비교는 --engine native에서만 허용됩니다");}
+        let dir=require(args,"--ehnd-dir")?;
+        let filters=Ehnd::load(Path::new(&dir))?;
+        eprintln!("WARNING: EHND 리터럴 {}개만 적용하며 regex·지시문 {}개는 실행하지 않습니다. 원본 번역 재현이 아닙니다",
+            filters.counts.literals,filters.counts.regexes+filters.counts.directives+filters.counts.unknown);
+        return Ok(Box::new(EhndLiteralComparison{inner:translator,filters}));
+    }
+    if flag(args,"--ehnd-dir") {bail!("--ehnd-dir에는 명시적인 --ehnd-literal-only가 필요합니다");}
+    Ok(translator)
 }
 fn pipeline_from_args(args:&[String])->Result<Pipeline>{
     let dict=match value(args,"--dictionary") {Some(file)=>Dictionary::from_file(Path::new(&file))?,None=>Dictionary::empty()};
@@ -101,6 +121,8 @@ fn help() {
   inspect --url URL [--html saved.html]
   inspect-dat --dir PATH [--out inspection.json]
   inspect-root-dll --dll PATH [--out root-report.json]
+  inspect-ehnd --dir PATH [--out ehnd-report.json]
+  Experimental: --ehnd-dir PATH --ehnd-literal-only (native only)
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
 
@@ -138,12 +160,22 @@ fn inspect_root_dll(args:&[String])->Result<()> {
     }
     Ok(())
 }
+fn inspect_ehnd(args:&[String])->Result<()> {
+    let directory=PathBuf::from(require(args,"--dir")?);
+    let rules=Ehnd::load(&directory)?;
+    let json=serde_json::to_string_pretty(&rules.report())?;
+    if let Some(path)=value(args,"--out"){
+        output::atomic_write(Path::new(&path),&json)?;
+    } else { println!("{json}"); }
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect")=>inspect(&args[2..]),
         Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
+        Some("inspect-ehnd")=>inspect_ehnd(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
         _=>{help();Ok(())}
