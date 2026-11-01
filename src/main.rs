@@ -96,15 +96,21 @@ fn file_translate(args:&[String])->Result<()> {
     println!("Saved {}",output.display());
     Ok(())
 }
-fn help(){
-    println!("Syousetu Translate (Rust)\n\
-  inspect --url URL [--html saved.html]\n\
-  download --url URL --out novel.txt [--start N --end N] [--html work.html --episode-html-dir folder]\n\
-  file --input novel.txt --out translated.txt\n\
-  Common: --engine native|eztrans|passthrough (default: native), --dictionary PATH, --japanese\n\  Native: --native-dictionary PATH [--native-strict]\n\  Legacy: --engine eztrans [--eztrans-dir PATH]; --passthrough\n\
-  download: --furigana --delay-ms 1200 --retry 2\n\
-  Native is a limited dictionary translator, NOT equivalent to proprietary ezTrans.\n\  `--passthrough` is a parser test, NOT a Japanese-to-Korean translation engine.\n\
-  Do not publish vendor DLLs or dictionaries without redistribution rights.\n");
+fn help() {
+    println!("{}", r#"Syousetu Translate (Rust)
+  inspect --url URL [--html saved.html]
+  download --url URL --out novel.txt [--start N --end N]
+  file --input novel.txt --out translated.txt
+
+  Engine: --engine native|eztrans|passthrough (default: native)
+  Native: --native-dictionary PATH [--native-strict]
+  Legacy: --engine eztrans [--eztrans-dir PATH]
+  Common: --dictionary PATH, --japanese, --passthrough
+  Download: --furigana --delay-ms 1200 --retry 2
+
+  Native mode is limited glossary translation and is not identical to ezTrans.
+  --passthrough is only for parser tests, not Japanese-to-Korean translation.
+  Do not redistribute proprietary vendor assets without permission."#);
 }
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
