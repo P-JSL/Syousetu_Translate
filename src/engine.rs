@@ -93,14 +93,37 @@ fn resolve_engine_dir(explicit: Option<&Path>) -> Result<PathBuf> {
     }).context("ezTrans DLL 및 Dat 경로가 없습니다. scripts/install_local_engine.py로 설치하거나 --eztrans-dir을 지정하세요")
 }
 
+/// Translation backend selector. Native mode never loads the vendor DLL.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum EngineMode { Native, EzTrans, Passthrough }
 #[derive(Debug, Clone)]
-pub struct EngineConfig {pub eztrans_dir: Option<PathBuf>, pub passthrough: bool}
-pub fn create_engine(c:&EngineConfig)->Result<Box<dyn Translator>>{
-    if c.passthrough {return Ok(Box::new(Passthrough));}
-    let path=resolve_engine_dir(c.eztrans_dir.as_deref())?;
-    Ok(Box::new(EzTrans::open(&path)?))
+pub struct EngineConfig {
+    pub eztrans_dir: Option<PathBuf>,
+    pub native_dictionary: Option<PathBuf>,
+    pub strict_native: bool,
+    pub mode: EngineMode,
 }
-
+pub struct Native {
+    inner: syousetu_translate::native::NativeTranslator,
+}
+impl Translator for Native {
+    fn translate(&mut self, text: &str) -> Result<String> {
+        self.inner.translate(text)
+    }
+}
+pub fn create_engine(c: &EngineConfig) -> Result<Box<dyn Translator>> {
+    match c.mode {
+        EngineMode::Passthrough => Ok(Box::new(Passthrough)),
+        EngineMode::Native => Ok(Box::new(Native {
+            inner: syousetu_translate::native::NativeTranslator::new(
+                c.native_dictionary.as_deref(), c.strict_native)?,
+        })),
+        EngineMode::EzTrans => {
+            let path = resolve_engine_dir(c.eztrans_dir.as_deref())?;
+            Ok(Box::new(EzTrans::open(&path)?))
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,13 +133,22 @@ mod tests {
         let path = Path::new("custom-eztrans-path");
         assert_eq!(resolve_engine_dir(Some(path)).unwrap(), path);
     }
-
     #[test]
     fn pass_through_never_requires_a_dll() {
         let mut engine = create_engine(&EngineConfig {
             eztrans_dir: Some(PathBuf::from("intentionally-nonexistent")),
-            passthrough: true,
+            native_dictionary: None, strict_native: false,
+            mode: EngineMode::Passthrough,
         }).unwrap();
         assert_eq!(engine.translate("原文").unwrap(), "原文");
+    }
+    #[test]
+    fn native_engine_does_not_require_vendor_dll_or_dat() {
+        let mut engine = create_engine(&EngineConfig {
+            eztrans_dir: Some(PathBuf::from("intentionally-nonexistent")),
+            native_dictionary: None, strict_native: false,
+            mode: EngineMode::Native,
+        }).unwrap();
+        assert_eq!(engine.translate("私は学生です。").unwrap(), "나는 학생입니다。");
     }
 }
