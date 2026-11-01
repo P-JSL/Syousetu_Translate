@@ -12,6 +12,7 @@ pub mod native;
 pub mod legacy_dat;
 pub mod root_dll;
 pub mod ehnd;
+pub mod ehnd_regex;
 
 use native::NativeTranslator;
 use std::{
