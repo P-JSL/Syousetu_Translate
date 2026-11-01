@@ -1,7 +1,9 @@
 //! Optional Windows ezTrans ABI-compatible interface.
 //! Requires a licensed, user-provided 32-bit DLL and its own dictionary data.
 use anyhow::{bail, Context, Result};
-use std::{path::{Path, PathBuf}, ffi::CString};
+use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::ffi::CString;
 
 pub trait Translator {
     fn translate(&mut self, text: &str) -> Result<String>;
