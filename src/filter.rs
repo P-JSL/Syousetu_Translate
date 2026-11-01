@@ -157,6 +157,19 @@ impl Pipeline {
         assert_eq!(choose_josa(Some('사'),"은"),"는");
         assert_eq!(hiragana_to_hangul("きゃ"),"캬");
     }
+    #[test] fn native_dictionary_names_keep_korean_josa(){
+        use crate::engine::{create_engine, EngineConfig, EngineMode};
+        let custom=Dictionary::parse("猫\t사자#N\n").unwrap();
+        let pipeline=Pipeline::new(custom);
+        let mut native=create_engine(&EngineConfig{
+            mode:EngineMode::Native,
+            eztrans_dir:None,
+            native_dictionary:None,
+            strict_native:false,
+        }).unwrap();
+        assert_eq!(pipeline.translate(&mut *native,"猫は学生です。").unwrap(),
+            "사자는 학생입니다。");
+    }
     #[test] fn preserve_emoji_and_brackets(){
         let pipe=Pipeline::new(Dictionary::empty());
         let result=pipe.translate(&mut Passthrough,"こんにちは 😀 (世界)").unwrap();
