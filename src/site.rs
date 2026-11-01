@@ -40,10 +40,22 @@ pub fn canonicalize(input: &str) -> Result<(Site, String)> {
 fn first_text(doc: &Html, selectors: &[&str]) -> Option<String> {
     selectors.iter().find_map(|s| {
         let sel = Selector::parse(s).ok()?;
-        doc.select(&sel).next().map(|el| clean(&el.text().collect::<String>())).filter(|s| !s.is_empty())
+        doc.select(&sel).next().map(|el| {
+            el.value().attr("content").map(clean)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| clean(&el.text().collect::<String>()))
+        }).filter(|s| !s.is_empty())
     })
 }
 fn clean(input: &str) -> String { input.split_whitespace().collect::<Vec<_>>().join(" ") }
+/// Some public pages serve only a preview of the TOC. Never silently
+/// present such a partial index as a complete work.
+fn advertised_episode_count(document: &Html) -> Option<usize> {
+    let text = document.root_element().text().collect::<String>();
+    let count = regex::Regex::new(r"全\s*([0-9,]+)\s*話").ok()?;
+    let raw = count.captures(&text)?.get(1)?.as_str().replace(',', "");
+    raw.parse().ok()
+}
 fn is_valid_episode(site: Site, original: &Url, candidate: &Url) -> bool {
     if candidate.scheme() != "https" && candidate.scheme() != "http" { return false; }
     if candidate.host_str() != original.host_str() { return false; }
@@ -119,7 +131,7 @@ pub fn parse_work(url: &str, html: &str) -> Result<Work> {
     let doc = Html::parse_document(html);
     let title_candidates: &[&str] = match site {
         Site::Kakuyomu => &["h1", "meta[property='og:title']"],
-        Site::Alphapolis => &[".content-main .title", ".novel-title", "h1", ".title"],
+        Site::Alphapolis => &[".content-main .title", ".novel-title", "h1", ".title", "meta[property='og:title']", "meta[name='twitter:title']"],
         Site::Syosetu | Site::Syosetu18 => &[".p-novel__title", "h1", ".novel_title"],
         Site::Hameln => &["[itemprop='name']", "h1"],
         Site::Novelup => &[".storyTitle", "h1"],
@@ -131,7 +143,13 @@ pub fn parse_work(url: &str, html: &str) -> Result<Work> {
     let mut episodes=collect_links(site,&base,&doc);
     if site==Site::Kakuyomu {
         if let Some((_,_,json_links))=kakuyomu_next_data(&doc,&base) {
-            if episodes.is_empty() { episodes=json_links; }
+            if json_links.len() > episodes.len() { episodes=json_links; }
+        }
+        if let Some(advertised) = advertised_episode_count(&doc) {
+            if episodes.len() < advertised {
+                bail!("카쿠요무 목차가 일부만 로드되었습니다: 수집 {}화 / 사이트 표시 {}화.                     부분 결과를 완전한 작품으로 저장하지 않습니다. HTML 전체 목차 또는 유효한 인증 세션이 필요합니다.",
+                    episodes.len(), advertised);
+            }
         }
     }
     if episodes.is_empty() { bail!("목차 링크를 찾지 못했습니다. 인증/연령제한/동적 페이지 여부를 확인하세요"); }
@@ -190,6 +208,20 @@ pub fn parse_episode(site: Site, html: &str, include_furigana: bool) -> Result<E
             "<h1 class='episode-title'>第一話</h1><div id='novelBody'><p>本文<ruby>漢<rt>かん</rt></ruby>字</p><p>次の行</p></div>",false).unwrap();
         assert_eq!(episode.title,"第一話"); assert!(episode.lines.join(" ").contains("本文漢字"));
         assert!(!episode.lines.join(" ").contains("かん"));
+    }
+    #[test] fn meta_title_and_description() {
+        let index=r#"<meta property="og:title" content="テスト作品"><meta name="description" content="紹介文">
+          <a href="/novel/767156331/284095783/episode/42">本文へ</a>"#;
+        let work=parse_work("https://www.alphapolis.co.jp/novel/767156331/284095783",index).unwrap();
+        assert_eq!(work.title,"テスト作品");
+        assert_eq!(work.description,"紹介文");
+    }
+    #[test] fn preview_only_toc_is_rejected(){
+        let url="https://kakuyomu.jp/works/2912051603596422650";
+        let html=r#"<h1>本文</h1><div>連載中 全118話</div>
+            <a href="/works/2912051603596422650/episodes/1">1</a>
+            <a href="/works/2912051603596422650/episodes/2">2</a>"#;
+        assert!(parse_work(url,html).unwrap_err().to_string().contains("수집 2화 / 사이트 표시 118화"));
     }
     #[test] fn kakuyomu_toc(){
         let work=parse_work("https://kakuyomu.jp/works/2912051603596422650",
