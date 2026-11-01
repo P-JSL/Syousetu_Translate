@@ -29,3 +29,22 @@ jobs:
           name: SyousetuTranslate-Windows-x86
           path: target/i686-pc-windows-msvc/release/syousetu-translate.exe
           if-no-files-found: error
+
+  live-site-smoke:
+    name: Live site smoke tests (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Kakuyomu work index
+        continue-on-error: true
+        run: cargo run -- inspect --url https://kakuyomu.jp/works/2912051603596422650
+      - name: Kakuyomu chapter 1 (passthrough only)
+        continue-on-error: true
+        run: cargo run -- download --url https://kakuyomu.jp/works/2912051603596422650 --out kakuyomu-first.txt --start 1 --end 1 --passthrough
+      - name: Alphapolis work index
+        continue-on-error: true
+        run: cargo run -- inspect --url https://www.alphapolis.co.jp/novel/767156331/284095783
+      - name: Alphapolis chapter 1 (passthrough only)
+        continue-on-error: true
+        run: cargo run -- download --url https://www.alphapolis.co.jp/novel/767156331/284095783 --out alphapolis-first.txt --start 1 --end 1 --passthrough
