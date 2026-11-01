@@ -26,6 +26,9 @@ jobs:
       - run: cargo test --all-targets
       - run: cargo test --lib
       - run: cargo build --release --target ${{ matrix.target }}
+      - name: Verify exported ABI symbol names in Windows x86 DLL
+        if: matrix.os == 'windows-latest'
+        run: python scripts/verify_pe_exports.py target/i686-pc-windows-msvc/release/syousetu_translate.dll J2K_InitializeEx J2K_TranslateMMNTW J2K_TranslateMMNT J2K_FreeMem
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
