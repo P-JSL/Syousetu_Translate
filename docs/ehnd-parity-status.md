@@ -28,10 +28,10 @@ analysis of the user's original, local EHND files found:
 |---|---:|---|
 | All physical lines | 37,870 | Counted |
 | Comments / blank lines | 17,425 | Ignored intentionally |
-| Literal replacement definitions | 8,667 | Parsed; explicit comparison mode executes them |
-| Regex replacement definitions | 8,597 | Parsed, not executed |
-| Stage-control directives (_TGL, _skip_sub, _SkipLayer, etc.) | 3,141 | Preserved as raw fields; not interpreted |
-| Unknown non-comment definitions | 40 | Preserved as raw fields; not interpreted |
+| Literal replacement definitions | 8,665 | Parsed; explicit comparison modes execute them |
+| Regex replacement definitions | 8,595 | Parsed; optional bounded regex executor added |
+| Stage-control directives (_TGL, _skip_sub, _SkipLayer, etc.) | 3,177 | Audited structurally; execution semantics unknown |
+| Unknown non-comment definitions | 8 | Preserved as raw fields; not interpreted |
 
 These are **rule definitions**, not independently established executable
 functions. The original conditional sequencing, skip-layer routing,
@@ -43,6 +43,44 @@ Supporting files additionally audited for presence and line counts:
 SkipLayer_@Hdor.txt, PreFilter_@1Hdor_Set.txt, and the three
 UserDict_@Hdor#*.txt dictionaries. The INI is UTF-16LE and the filter
 files are BOM-bearing UTF-8 or UTF-16; all are read from user-owned files.
+
+## EHND deep audit, November 2, 2026
+
+Exact input inspection found a parser-classification error: some control
+directives starting with underscore had numeric priority/type fields and
+were accidentally classified as ordinary rules. The fixed parser always
+classifies underscore directives first. The revised counts above replace
+the previous audit.
+
+On the locally supplied EHND files, the independent Python regex compiler
+accepted all 8,595 active regex patterns in a *syntax-only* check.
+This does not establish Rust fancy-regex or commercial EHND equivalence.
+Pattern features include 6,759 positive lookahead, 1,617 positive
+lookbehind, 848 negative lookbehind, 512 negative lookahead and
+30 numeric backreference (group 1 or 2) occurrences.
+
+The new opt-in src/ehnd_regex.rs uses fancy-regex 0.16.2 with bounded
+backtracking, size limits, numeric capture replacement normalization
+and explicit error locations. It compiles original ordinary literal and
+regex rules in priority/source order. Missing conditional-rule semantics
+are not guessed or silently enabled; strict mode rejects unsupported
+directives or compile failures.
+
+src/ehnd_control.rs extracts TGL family and control-id relationships.
+Original data contains 704 _CONN, 262 _ON and 145 _DECR family
+references, 144 unique control IDs, and 136 IDs shared between
+_ON and _CONN. These are *structural relationships*, not established
+runtime activation semantics.
+
+On a personally owned local installation:
+
+    cargo run -- audit-ehnd-regex --dir "C:\ezTrans XP\Ehnd" --out regex-audit.json
+    cargo run -- audit-ehnd-control --dir "C:\ezTrans XP\Ehnd" --out control-audit.json
+    cargo run -- file --input original.txt --out filtered.txt --engine native --ehnd-dir "C:\ezTrans XP\Ehnd" --ehnd-regex-experimental
+
+Unverified: all EHND directive behavior, fully equivalent .NET regex
+semantics, original J2KEngine.dlx morphology and dictionary codecs,
+25-export ABI parity and bitwise-equivalent translations.
 
 ## Rust changes
 
