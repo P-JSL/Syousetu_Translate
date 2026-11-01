@@ -11,6 +11,7 @@ pub mod morph;
 pub mod native;
 pub mod legacy_dat;
 pub mod root_dll;
+pub mod ehnd;
 
 use native::NativeTranslator;
 use std::{
