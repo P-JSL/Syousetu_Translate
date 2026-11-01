@@ -64,6 +64,33 @@ the commercial engine's grammar and dictionary algorithms.
 Full PE evidence, export ordinals, and known ABI gaps:
 docs/root-dll-scope.md.
 
+## Experimental EHND regex and control-flow audit
+
+Original EHND filter files include 8,665 ordinary literal rules,
+8,595 ordinary regex rules, 3,177 conditional directives, and 8
+unclassified definitions. The structural parser now prioritizes
+underscore-prefixed directives over numeric columns.
+
+An explicitly enabled *experimental* Rust filter executor supports
+lookaround, backreferences, numeric capture replacements, and
+literal transformations in priority order. A per-pattern backtrack
+limit and input/output limits are enforced; regex failures return
+an error with the source file and line number. The original EHND
+conditional state machine is not implemented.
+
+Run against user-owned local files:
+
+```shell
+cargo run -- audit-ehnd-regex --dir ./engine/Ehnd --out audit.json
+cargo run -- audit-ehnd-control --dir ./engine/Ehnd --out controls.json
+cargo run -- file --input source.txt --out experimental.txt --engine native --ehnd-dir ./engine/Ehnd --ehnd-regex-experimental
+```
+
+The --ehnd-regex-strict switch explicitly rejects incomplete execution.
+Avoid this experimental filter mode for production content until results
+are compared with the licensed original executable. Ordinary native
+mode does not enable EHND filters. See docs/ehnd-parity-status.md.
+
 ## Rust-native J2K replacement (experimental)
 
 The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
