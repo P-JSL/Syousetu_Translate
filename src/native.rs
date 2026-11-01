@@ -203,8 +203,32 @@ impl NativeTranslator {
             insert(&mut entries, &mut keys, source, target, Kind::Word);
         }
         if let Some(path) = dictionary {
-            for (source, target) in crate::dictionary::read(path)? {
-                insert(&mut entries, &mut keys, &source, &target, Kind::Word);
+            if path.is_dir() {
+                // EHND's text dictionaries are available in the supplied
+                // local files. This loads lexical pairs only, NOT the original
+                // user's priority flags, POS constraints, or grammar behavior.
+                let dir=if path.join("Ehnd").is_dir(){path.join("Ehnd")}
+                        else{path.to_path_buf()};
+                for filename in [
+                    "UserDict_@Hdor#0#req.txt",
+                    "UserDict_@Hdor#1.txt",
+                    "UserDict_@Hdor#name.txt",
+                ] {
+                    let file=dir.join(filename);
+                    for (source,target) in crate::dictionary::read(&file)? {
+                        if source.contains('#') || target.contains('#')
+                            || source.contains('二') || target.contains('二') {
+                            // EHND's internal markers are not plain glossary
+                            // surface forms. Do not fabricate their semantics.
+                            continue;
+                        }
+                        insert(&mut entries,&mut keys,&source,&target,Kind::Word);
+                    }
+                }
+            } else {
+                for (source,target) in crate::dictionary::read(path)? {
+                    insert(&mut entries, &mut keys, &source, &target, Kind::Word);
+                }
             }
         }
         entries.sort_unstable_by(|a, b| a.source.cmp(&b.source));
@@ -297,6 +321,28 @@ mod tests {
         assert_eq!(t.translate("未知語").unwrap(), "未知語");
         assert_eq!(t.translate("😀").unwrap(), "😀");
         assert!(NativeTranslator::new(None, true).unwrap().translate("未知語").is_err());
+    }
+    #[test]
+    fn can_load_local_ehnd_lexicon_without_vendor_engine(){
+        use std::fs;
+        let dir=std::env::temp_dir().join(format!("native-ehnd-test-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for filename in [
+            "UserDict_@Hdor#0#req.txt",
+            "UserDict_@Hdor#1.txt",
+            "UserDict_@Hdor#name.txt",
+        ]{
+            fs::write(dir.join(filename),"クロムウェル\t크롬웰#N\t1\tVHn\n").unwrap();
+        }
+        let translator=NativeTranslator::new(Some(&dir),false).unwrap();
+        assert_eq!(translator.translate("クロムウェルは学生です。").unwrap(),
+            "크롬웰은 학생입니다。");
+        for filename in [
+            "UserDict_@Hdor#0#req.txt",
+            "UserDict_@Hdor#1.txt",
+            "UserDict_@Hdor#name.txt",
+        ] {fs::remove_file(dir.join(filename)).unwrap();}
+        fs::remove_dir(dir).unwrap();
     }
     #[test]
     fn long_input_remains_bounded_and_unmodified_ascii() {
