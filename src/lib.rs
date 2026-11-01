@@ -54,7 +54,7 @@ fn current_translator() -> Option<Arc<NativeTranslator>> {
 /// Argument pointers are never dereferenced.
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn J2K_InitializeEx(_id: *const c_char,_dir: *const c_char) -> i32 {
+pub unsafe extern "system" fn J2K_InitializeEx(_id: *const c_char,_dir: *const c_char) -> i32 {
     std::panic::catch_unwind(||{
         match build_translator() {
             Ok(engine) => {
@@ -130,7 +130,7 @@ fn alloc_narrow(value: &[u8]) -> *mut c_char {
 /// than MAX_TEXT_UNITS, and release any result using J2K_FreeMem.
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn J2K_TranslateMMNTW(_flags:i32,source:*const u16)->*mut u16 {
+pub unsafe extern "system" fn J2K_TranslateMMNTW(_flags:i32,source:*const u16)->*mut u16 {
     if source.is_null(){return ptr::null_mut();}
     std::panic::catch_unwind(|| {
         let engine=current_translator()?;
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn J2K_TranslateMMNTW(_flags:i32,source:*const u16)->*mut 
 /// Output must be released with J2K_FreeMem.
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn J2K_TranslateMMNT(_flags:i32,source:*const c_char)->*mut c_char {
+pub unsafe extern "system" fn J2K_TranslateMMNT(_flags:i32,source:*const c_char)->*mut c_char {
     if source.is_null() {return ptr::null_mut();}
     std::panic::catch_unwind(|| {
         let engine=current_translator()?;
