@@ -32,7 +32,9 @@ impl EzTrans {
             let free = *lib.get::<unsafe extern "C" fn(*mut u16)->i32>(b"J2K_FreeMem\0")?;
             let id = CString::new("CSUSER123455")?;
             // JNA uses the Windows default ANSI codepage; CP949 is common on Korean Windows.
-            let (encoded,_,bad)=encoding_rs::EUC_KR.encode(&dir.join("Dat").to_string_lossy());
+            let data_dir=dir.join("Dat");
+            let path_text=data_dir.to_string_lossy().into_owned();
+            let (encoded,_,bad)=encoding_rs::EUC_KR.encode(&path_text);
             if bad {bail!("ezTrans 데이터 경로를 CP949로 변환할 수 없습니다");}
             let directory=CString::new(encoded.into_owned()).context("DLL 데이터 경로에 NUL 문자가 있습니다")?;
             let _status=init(id.as_ptr(), directory.as_ptr());
