@@ -3,6 +3,16 @@ use anyhow::{bail,Context,Result};
 use std::{env,fs,path::{Path,PathBuf}};
 use engine::{EngineConfig,EngineMode,create_engine};
 use syousetu_translate::ehnd::{Ehnd, Phase};
+use syousetu_translate::ehnd_regex::Executor as EhndRegexExecutor;
+struct EhndRegexComparison {inner:Box<dyn engine::Translator>,executor:EhndRegexExecutor}
+impl engine::Translator for EhndRegexComparison {
+    fn translate(&mut self,text:&str)->Result<String> {
+        let pre=self.executor.apply(Phase::Pre,text)?;
+        let middle=self.inner.translate(&pre)?;
+        self.executor.apply(Phase::Post,&middle)
+    }
+}
+
 struct EhndLiteralComparison { inner:Box<dyn engine::Translator>, filters:Ehnd }
 impl engine::Translator for EhndLiteralComparison {
     fn translate(&mut self,text:&str)->Result<String> {
@@ -41,6 +51,20 @@ fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
         native_dictionary:value(args,"--native-dictionary").map(PathBuf::from),
         strict_native:flag(args,"--native-strict"),
     })?;
+    if flag(args,"--ehnd-regex-experimental") {
+        if flag(args,"--ehnd-literal-only") {
+            bail!("--ehnd-regex-experimental과 --ehnd-literal-only는 동시 지정 불가");
+        }
+        if engine!=EngineMode::Native {
+            bail!("EHND 실험용 필터는 --engine native에서만 사용 가능합니다");
+        }
+        let filters=Ehnd::load(Path::new(&require(args,"--ehnd-dir")?))?;
+        let executor=EhndRegexExecutor::compile(&filters,flag(args,"--ehnd-regex-strict"))?;
+        eprintln!("WARNING: 원본 EHND와 다르게 동작할 수 있는 실험 모드입니다. literal {}, regex {}, 컴파일 불가 {}, 미지원 directive {}, 미분류 {}",
+            executor.audit.literals,executor.audit.regexes,
+            executor.audit.rejected,executor.audit.directives,executor.audit.unknown);
+        return Ok(Box::new(EhndRegexComparison{inner:translator,executor}));
+    }
     if flag(args,"--ehnd-literal-only") {
         if engine!=EngineMode::Native {bail!("EHND 리터럴 비교는 --engine native에서만 허용됩니다");}
         let dir=require(args,"--ehnd-dir")?;
@@ -122,6 +146,8 @@ fn help() {
   inspect-dat --dir PATH [--out inspection.json]
   inspect-root-dll --dll PATH [--out root-report.json]
   inspect-ehnd --dir PATH [--out ehnd-report.json]
+  audit-ehnd-regex --dir PATH [--out audit.json] [--strict]
+  Experimental: --ehnd-dir PATH --ehnd-regex-experimental [--ehnd-regex-strict]
   compare-engines --eztrans-dir PATH --input corpus.txt [--out comparison.json]
   Experimental: --ehnd-dir PATH --ehnd-literal-only (native only)
   download --url URL --out novel.txt [--start N --end N]
@@ -223,6 +249,15 @@ fn compare_engines(args:&[String])->Result<()> {
     }else{println!("{serialized}");}
     Ok(())
 }
+fn audit_ehnd_regex(args:&[String])->Result<()> {
+    let filters=Ehnd::load(Path::new(&require(args,"--dir")?))?;
+    let executor=EhndRegexExecutor::compile(&filters,flag(args,"--strict"))?;
+    let serialized=serde_json::to_string_pretty(&executor.audit)?;
+    if let Some(target)=value(args,"--out"){
+        output::atomic_write(Path::new(&target),&serialized)?;
+    }else{println!("{serialized}");}
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -230,6 +265,7 @@ fn run()->Result<()> {
         Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
         Some("inspect-ehnd")=>inspect_ehnd(&args[2..]),
+        Some("audit-ehnd-regex")=>audit_ehnd_regex(&args[2..]),
         Some("compare-engines")=>compare_engines(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
