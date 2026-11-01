@@ -46,13 +46,22 @@ pub struct Report {
     pub all_rules_executable:bool,
     pub actual_engine_semantics_preserved:bool,
     pub config:Vec<(String,String)>,
+    pub supporting_files:Vec<SupportingFile>,
     pub warnings:Vec<&'static str>,
+}
+#[derive(Clone,Debug,Serialize)]
+pub struct SupportingFile {
+    pub filename:String,
+    pub present:bool,
+    pub raw_lines:usize,
+    pub active_lines:usize,
 }
 pub struct Ehnd {
     directory:PathBuf,
     pub rules:Vec<Rule>,
     pub counts:RuleCounts,
     pub config:Vec<(String,String)>,
+    pub supporting_files:Vec<SupportingFile>,
 }
 fn read_text(path:&Path)->Result<String>{
     let bytes=fs::read(path).with_context(||format!("EHND 파일 읽기 실패: {}",path.display()))?;
@@ -134,7 +143,34 @@ impl Ehnd {
                     raw:trimmed.to_owned(),fields,kind,priority});
             }
         }
-        Ok(Self{directory,rules,counts,config})
+        // Supporting files have separate grammar: preserve their presence
+        // and line counts. Never treat user dictionary columns or SkipLayer
+        // patterns as ordinary global search-and-replace rules.
+        let mut supporting_files=Vec::new();
+        for filename in [
+            "SkipLayer_@Hdor.txt",
+            "PreFilter_@1Hdor_Set.txt",
+            "UserDict_@Hdor#0#req.txt",
+            "UserDict_@Hdor#1.txt",
+            "UserDict_@Hdor#name.txt",
+        ]{
+            let path=directory.join(filename);
+            if path.is_file() {
+                let contents=read_text(&path)?;
+                let raw_lines=contents.lines().count();
+                let active_lines=contents.lines()
+                    .filter(|l|!l.trim().is_empty()&&!l.trim_start().starts_with("//"))
+                    .count();
+                supporting_files.push(SupportingFile{
+                    filename:filename.to_owned(),present:true,raw_lines,active_lines,
+                });
+            }else{
+                supporting_files.push(SupportingFile{
+                    filename:filename.to_owned(),present:false,raw_lines:0,active_lines:0,
+                });
+            }
+        }
+        Ok(Self{directory,rules,counts,config,supporting_files})
     }
     pub fn report(&self)->Report{
         Report{
@@ -144,6 +180,7 @@ impl Ehnd {
             all_rules_executable:false,
             actual_engine_semantics_preserved:false,
             config:self.config.clone(),
+            supporting_files:self.supporting_files.clone(),
             warnings:vec![
                 "Only literal replacement rules can run; .NET regex and EHND directives are not interpreted",
                 "Priority is sorted numerically, preserving original order on ties; original engine stage ordering has not been independently verified",
@@ -221,6 +258,18 @@ mod tests {
             fs::remove_file(dir.join(name)).unwrap();
         }
         fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn real_ehnd_files_if_available(){
+        let Some(directory)=std::env::var_os("SYOUSETU_EHND_DIR") else {return;};
+        let set=Ehnd::load(Path::new(&directory)).unwrap();
+        assert_eq!(set.counts.raw_lines,37_870);
+        assert_eq!(set.counts.literals,8_667);
+        assert_eq!(set.counts.regexes,8_597);
+        assert_eq!(set.counts.directives,3_141);
+        assert_eq!(set.counts.unknown,40);
+        assert!(set.supporting_files.iter().all(|file|file.present));
+        assert!(!set.report().actual_engine_semantics_preserved);
     }
     #[test]
     fn utf16_ini_decoder(){
