@@ -100,6 +100,7 @@ fn help() {
     println!("{}", r#"Syousetu Translate (Rust)
   inspect --url URL [--html saved.html]
   inspect-dat --dir PATH [--out inspection.json]
+  inspect-root-dll --dll PATH [--out root-report.json]
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
 
@@ -122,11 +123,27 @@ fn inspect_dat(args:&[String])->Result<()> {
     } else {println!("{json}");}
     Ok(())
 }
+fn inspect_root_dll(args:&[String])->Result<()> {
+    let path=PathBuf::from(require(args,"--dll")?);
+    let bytes=fs::read(&path).with_context(||format!("DLL 파일 읽기 실패: {}",path.display()))?;
+    let report=syousetu_translate::root_dll::inspect(&bytes)?;
+    if !report.matching_known_root_exports {
+        bail!("지정된 파일은 최상위 EHND/J2KEngine.dll의 검증된 25개 export와 일치하지 않습니다");
+    }
+    let json=serde_json::to_string_pretty(&report)?;
+    if let Some(output)=value(args,"--out") {
+        output::atomic_write(Path::new(&output),&json)?;
+    } else {
+        println!("{json}");
+    }
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect")=>inspect(&args[2..]),
         Some("inspect-dat")=>inspect_dat(&args[2..]),
+        Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
         _=>{help();Ok(())}
