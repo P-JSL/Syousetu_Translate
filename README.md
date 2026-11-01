@@ -39,6 +39,31 @@ SYOUSETU_LEGACY_DAT_DIR=/path/to/Dat cargo test --lib original_binary_assets_if_
 
 CI uses synthetic fixtures and excludes proprietary assets from releases.
 
+## Original DLL scope: ZIP-root EHND wrapper
+
+The sole *original DLL reference target* for this migration is the
+364,032-byte **J2KEngine.dll at the root of ezTrans XP.zip**. The
+same-byte J2KEngineH.dll is accepted as an alias. This wrapper advertises
+the PE export name EHND.dll and 25 named exports. A separate
+J2KEngine.dlx dependency supplies the original proprietary engine;
+the 2,998,272-byte translator/J2KEngine.dll is identical to that
+dependency, not to the root wrapper. Do not confuse the two.
+
+Inspect your licensed local copy, without executing it:
+
+```sh
+cargo run -- inspect-root-dll --dll "C:\ezTrans XP\J2KEngine.dll" --out root-wrapper.json
+```
+
+Legacy --engine eztrans now checks that it is loading the **root
+EHND DLL** and that J2KEngine.dlx and Dat/ exist before initializing it.
+The independent Rust native translator does not need any of these files.
+An export-name-compatible Rust DLL is NOT equivalent to reproducing all
+the commercial engine's grammar and dictionary algorithms.
+
+Full PE evidence, export ordinals, and known ABI gaps:
+docs/root-dll-scope.md.
+
 ## Rust-native J2K replacement (experimental)
 
 The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
