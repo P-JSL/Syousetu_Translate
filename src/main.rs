@@ -84,7 +84,7 @@ fn help(){
   inspect --url URL [--html saved.html]\n\
   download --url URL --out novel.txt [--start N --end N] [--html work.html --episode-html-dir folder]\n\
   file --input novel.txt --out translated.txt\n\
-  Common: --passthrough | --eztrans-dir PATH, --dictionary PATH, --japanese\n\
+  Common: --passthrough | --eztrans-dir PATH (optional with local engine/), --dictionary PATH, --japanese\n\
   download: --furigana --delay-ms 1200 --retry 2\n\
   `--passthrough` is a parser test, NOT a Japanese-to-Korean translation engine.\n\
   Do not publish vendor DLLs or dictionaries without redistribution rights.\n");
