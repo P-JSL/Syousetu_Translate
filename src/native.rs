@@ -4,8 +4,8 @@
 //! ezTrans morphological and transfer-rule engine. Unknown Japanese is retained
 //! instead of being silently presented as successfully translated Korean.
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use anyhow::{bail, Context, Result};
-use std::{collections::HashMap, fs, path::Path};
+use anyhow::{bail, Result};
+use std::{collections::HashMap, path::Path};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Kind { Word, Phrase, Particle, Ending }
@@ -199,32 +199,12 @@ impl NativeTranslator {
         for &(source, target, kind) in BUILTIN {
             insert(&mut entries, &mut keys, source, target, kind);
         }
+        for &(source, target) in crate::morph::CONJUGATED {
+            insert(&mut entries, &mut keys, source, target, Kind::Word);
+        }
         if let Some(path) = dictionary {
-            let data = fs::read(path)
-                .with_context(|| format!("네이티브 사전 파일: {}", path.display()))?;
-            let text = if data.starts_with(&[0xff, 0xfe]) {
-                let (s, _, bad) = encoding_rs::UTF_16LE.decode(&data[2..]);
-                if bad { bail!("UTF-16LE 사전 디코딩 실패"); }
-                s.into_owned()
-            } else if data.starts_with(&[0xfe, 0xff]) {
-                let (s, _, bad) = encoding_rs::UTF_16BE.decode(&data[2..]);
-                if bad { bail!("UTF-16BE 사전 디코딩 실패"); }
-                s.into_owned()
-            } else {
-                String::from_utf8(data).context("사전은 UTF-8 또는 UTF-16 BOM 형식이어야 합니다")?
-            };
-            for (line_no, raw) in text.trim_start_matches('\u{feff}').lines().enumerate() {
-                let line = raw.trim_end_matches('\r');
-                if line.trim().is_empty() || line.trim_start().starts_with("//")
-                    || line.trim_start().starts_with('#') { continue; }
-                let mut fields = line.split('\t');
-                let from = fields.next().unwrap_or("").trim();
-                let to = fields.next().unwrap_or("").trim().trim_end_matches("#N");
-                if from.is_empty() || to.is_empty() {
-                    bail!("사전 {}:{}: 일본어<TAB>한국어 형식이 아닙니다",
-                        path.display(), line_no + 1);
-                }
-                insert(&mut entries, &mut keys, from, to, Kind::Word);
+            for (source, target) in crate::dictionary::read(path)? {
+                insert(&mut entries, &mut keys, &source, &target, Kind::Word);
             }
         }
         entries.sort_unstable_by(|a, b| a.source.cmp(&b.source));
@@ -302,6 +282,14 @@ mod tests {
         assert_eq!(t.translate("学校が").unwrap(), "학교가");
         assert_eq!(t.translate("本が").unwrap(), "책이");
         assert_eq!(t.translate("こんにちは！").unwrap(), "안녕하세요！");
+    }
+    #[test]
+    fn selected_verb_conjugations_avoid_fragmented_suffixes() {
+        let t=NativeTranslator::new(None,false).unwrap();
+        assert_eq!(t.translate("本を読んだ。").unwrap(),"책을 읽었다。");
+        assert_eq!(t.translate("水を飲みました。").unwrap(),"물을 마셨습니다。");
+        assert_eq!(t.translate("学校に行かなかった。").unwrap(),"학교에 가지 않았다。");
+        assert_eq!(t.translate("猫を見た。").unwrap(),"고양이를 봤다。");
     }
     #[test]
     fn unknown_text_is_not_fabricated() {
