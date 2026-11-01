@@ -10,6 +10,7 @@ pub mod dictionary;
 pub mod morph;
 pub mod native;
 pub mod legacy_dat;
+pub mod root_dll;
 
 use native::NativeTranslator;
 use std::{
