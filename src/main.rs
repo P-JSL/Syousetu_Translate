@@ -99,6 +99,7 @@ fn file_translate(args:&[String])->Result<()> {
 fn help() {
     println!("{}", r#"Syousetu Translate (Rust)
   inspect --url URL [--html saved.html]
+  inspect-dat --dir PATH [--out inspection.json]
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
 
@@ -112,10 +113,20 @@ fn help() {
   --passthrough is only for parser tests, not Japanese-to-Korean translation.
   Do not redistribute proprietary vendor assets without permission."#);
 }
+fn inspect_dat(args:&[String])->Result<()> {
+    let directory=PathBuf::from(require(args,"--dir")?);
+    let report=syousetu_translate::legacy_dat::inspect(&directory)?;
+    let json=serde_json::to_string_pretty(&report)?;
+    if let Some(path)=value(args,"--out") {
+        output::atomic_write(Path::new(&path),&json)?;
+    } else {println!("{json}");}
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect")=>inspect(&args[2..]),
+        Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
         _=>{help();Ok(())}
