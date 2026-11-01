@@ -9,6 +9,7 @@
 pub mod dictionary;
 pub mod morph;
 pub mod native;
+pub mod legacy_dat;
 
 use native::NativeTranslator;
 use std::{
