@@ -161,6 +161,17 @@ mod tests{
         assert!(CRuleKj::parse(&b[..b.len()-1]).is_err());
         b.push(0);assert!(CRuleKj::parse(&b).is_err());
     }
+    #[test]fn original_binary_assets_if_available(){
+        // Run locally with SYOUSETU_LEGACY_DAT_DIR. CI does not distribute
+        // commercial data and therefore uses synthetic fixture tests.
+        if let Some(directory)=std::env::var_os("SYOUSETU_LEGACY_DAT_DIR") {
+            let report=inspect(Path::new(&directory)).unwrap();
+            assert_eq!(report.assets.len(),4);
+            assert!(report.binary_layout_verified);
+            assert!(!report.grammar_equivalence_verified);
+            assert!(report.assets.iter().all(|f|f.byte_count>0));
+        }
+    }
     #[test]fn cache_header(){
         let mut b=SIGNATURE.to_vec();b.push(0x1a);b.resize(138,0);
         b.extend(b"KD2G");b.resize(1024,0);
