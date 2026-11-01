@@ -2,6 +2,8 @@
 //! the archived Java application. This preserves the *calling interface*,
 //! not the proprietary ezTrans translation quality or binary dictionary format.
 //! Native engine is independent of J2KEngine*.dll and Dat/ files.
+pub mod dictionary;
+pub mod morph;
 pub mod native;
 
 use native::NativeTranslator;
