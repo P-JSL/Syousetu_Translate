@@ -82,6 +82,12 @@ fn read_text(path:&Path)->Result<String>{
     }
 }
 fn classify(fields:&[String])->(RuleType,Option<u64>){
+    // Directive rows may contain numeric-looking metadata in the normal
+    // literal/regex columns. Prefix classification MUST win, otherwise
+    // protected control rules are accidentally executed as replacements.
+    if fields.first().is_some_and(|s|s.starts_with('_')){
+        return (RuleType::Directive,None);
+    }
     if fields.len()>=4 && !fields[0].is_empty() {
         if let Ok(priority)=fields[2].parse::<u64>(){
             return match fields[3].as_str() {
@@ -90,9 +96,6 @@ fn classify(fields:&[String])->(RuleType,Option<u64>){
                 _=>(RuleType::Unknown,Some(priority))
             };
         }
-    }
-    if fields.first().is_some_and(|s|s.starts_with('_')){
-        return (RuleType::Directive,None);
     }
     (RuleType::Unknown,None)
 }
@@ -233,6 +236,9 @@ mod tests {
         assert_eq!(classify(&fields("a+\tb\t11110100\t1")).0,RuleType::Regex);
         assert_eq!(classify(&fields("_TGL\t_ON:x\tregex\trep\t11110100\t1")).0,RuleType::Directive);
         assert_eq!(classify(&fields("_skip_sub\tdata")).0,RuleType::Directive);
+        // A directive can have numeric values in standard filter columns;
+        // it is still a control instruction, never an ordinary rule.
+        assert_eq!(classify(&fields("_bad\tvalue\t100\t1")).0,RuleType::Directive);
     }
     #[test]
     fn config_switches(){
@@ -276,10 +282,10 @@ mod tests {
         let Some(directory)=std::env::var_os("SYOUSETU_EHND_DIR") else {return;};
         let set=Ehnd::load(Path::new(&directory)).unwrap();
         assert_eq!(set.counts.raw_lines,37_870);
-        assert_eq!(set.counts.literals,8_667);
-        assert_eq!(set.counts.regexes,8_597);
-        assert_eq!(set.counts.directives,3_141);
-        assert_eq!(set.counts.unknown,40);
+        assert_eq!(set.counts.literals,8_665);
+        assert_eq!(set.counts.regexes,8_595);
+        assert_eq!(set.counts.directives,3_177);
+        assert_eq!(set.counts.unknown,8);
         assert!(set.supporting_files.iter().all(|file|file.present));
         assert!(!set.report().actual_engine_semantics_preserved);
     }
