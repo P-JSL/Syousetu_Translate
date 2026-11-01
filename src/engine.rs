@@ -65,10 +65,58 @@ pub struct EzTrans;
 impl EzTrans {pub fn open(_: &Path)->Result<Self>{bail!("ezTrans DLL은 Windows에서만 실행됩니다")}}
 #[cfg(not(windows))]
 impl Translator for EzTrans {fn translate(&mut self, _: &str)->Result<String>{bail!("Windows ezTrans DLL 필요")}}
+/// Resolve a user-provided installation or a local, Git-ignored engine bundle.
+fn resolve_engine_dir(explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(dir) = explicit {
+        return Ok(dir.to_path_buf());
+    }
+    if let Some(path) = std::env::var_os("SYOUSETU_EZTRANS_DIR") {
+        if !path.is_empty() {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("engine"));
+            candidates.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("engine"));
+        candidates.push(cwd);
+    }
+    candidates.into_iter().find(|dir| {
+        dir.join("Dat").is_dir()
+            && (dir.join("J2KEngineH.dll").is_file()
+                || dir.join("J2KEngine.dll").is_file())
+    }).context("ezTrans DLL 및 Dat 경로가 없습니다. scripts/install_local_engine.py로 설치하거나 --eztrans-dir을 지정하세요")
+}
+
 #[derive(Debug, Clone)]
 pub struct EngineConfig {pub eztrans_dir: Option<PathBuf>, pub passthrough: bool}
 pub fn create_engine(c:&EngineConfig)->Result<Box<dyn Translator>>{
     if c.passthrough {return Ok(Box::new(Passthrough));}
-    let path=c.eztrans_dir.as_deref().context("--eztrans-dir 또는 --passthrough를 지정하세요")?;
-    Ok(Box::new(EzTrans::open(path)?))
+    let path=resolve_engine_dir(c.eztrans_dir.as_deref())?;
+    Ok(Box::new(EzTrans::open(&path)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_engine_dir_is_not_overridden() {
+        let path = Path::new("custom-eztrans-path");
+        assert_eq!(resolve_engine_dir(Some(path)).unwrap(), path);
+    }
+
+    #[test]
+    fn pass_through_never_requires_a_dll() {
+        let mut engine = create_engine(&EngineConfig {
+            eztrans_dir: Some(PathBuf::from("intentionally-nonexistent")),
+            passthrough: true,
+        }).unwrap();
+        assert_eq!(engine.translate("原文").unwrap(), "原文");
+    }
 }
