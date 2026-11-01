@@ -14,6 +14,31 @@ cargo build --release
 
 On Windows, build the **i686-pc-windows-msvc** target if you are using a 32-bit original ezTrans engine. GitHub Actions checks Linux x64 and Windows x86 on commits.
 
+## Verified legacy binary file readers (not a full engine)
+
+The Rust CLI can validate the on-disk layout of user-owned JisJK.Inf,
+RuleKJ.Dat, CRuleKJ.Dat, and YongUn.Dat without loading the commercial DLL:
+
+```sh
+cargo run -- inspect-dat --dir "C:\path\to\ezTrans XP\Dat" --out inspection.json
+```
+
+The Rust library exposes lossless borrowed record readers for the aligned
+JisJK table (128-byte rows), RuleKJ (1024-byte pages), compact length-prefixed
+CRuleKJ, and YongUn signature/marker. This validates the **container format
+only**. The proprietary grammar bytecode, cross-file indices and dictionary
+codec are still unknown. The independent native translator does not use these
+binary models as grammar rules. Do not infer semantic equivalence or translation
+quality from successful inspection. See docs/legacy-binary-analysis.md.
+
+To run the tests on locally installed, personally authorized original files:
+
+```sh
+SYOUSETU_LEGACY_DAT_DIR=/path/to/Dat cargo test --lib original_binary_assets_if_available
+```
+
+CI uses synthetic fixtures and excludes proprietary assets from releases.
+
 ## Rust-native J2K replacement (experimental)
 
 The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
