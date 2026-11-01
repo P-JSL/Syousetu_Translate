@@ -26,6 +26,17 @@ impl EzTrans {
         let file = names.iter().map(|x| dir.join(x)).find(|p| p.is_file())
             .context("J2KEngineH.dll 또는 J2KEngine.dll을 찾지 못했습니다")?;
         if !dir.join("Dat").is_dir() {bail!("ezTrans Dat 디렉터리가 없습니다");}
+        // This legacy mode is intentionally scoped to the top-level EHND wrapper,
+        // not the different 466-export translator/J2KEngine.dll binary.
+        let library_bytes=std::fs::read(&file).with_context(||format!("DLL 검사 실패: {}",file.display()))?;
+        let report=syousetu_translate::root_dll::inspect(&library_bytes)
+            .with_context(||format!("지원되지 않는 DLL 형식: {}",file.display()))?;
+        if !report.matching_known_root_exports {
+            bail!("최상위 EHND/J2KEngine.dll의 검증된 25개 export와 일치하지 않습니다: {}",file.display());
+        }
+        if report.references_j2kengine_dlx && !dir.join("J2KEngine.dlx").is_file() {
+            bail!("최상위 DLL이 사용하는 J2KEngine.dlx가 설치 디렉터리에 없습니다");
+        }
         unsafe {
             let lib = Library::new(&file).with_context(||format!("DLL 로드 실패: {} (32-bit 프로세스인지 확인)",file.display()))?;
             let init: unsafe extern "C" fn(*const i8, *const i8) -> i32 =
