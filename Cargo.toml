@@ -5,6 +5,10 @@ edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"
 
+[lib]
+name = "syousetu_translate"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 anyhow = "1"
 aho-corasick = "1.1"
