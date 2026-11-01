@@ -15,7 +15,7 @@ impl Translator for Passthrough {
 #[cfg(windows)]
 pub struct EzTrans {
     _lib: libloading::Library,
-    translate: unsafe extern "C" fn(i32, *const u16) -> *mut u16,
+    translate: unsafe extern "system" fn(i32, *const u16) -> *mut u16,
     free: unsafe extern "C" fn(*mut u16) -> i32,
 }
 #[cfg(windows)]
@@ -39,9 +39,9 @@ impl EzTrans {
         }
         unsafe {
             let lib = Library::new(&file).with_context(||format!("DLL 로드 실패: {} (32-bit 프로세스인지 확인)",file.display()))?;
-            let init: unsafe extern "C" fn(*const i8, *const i8) -> i32 =
+            let init: unsafe extern "system" fn(*const i8, *const i8) -> i32 =
                 *lib.get(b"J2K_InitializeEx\0")?;
-            let translate = *lib.get::<unsafe extern "C" fn(i32,*const u16)->*mut u16>(b"J2K_TranslateMMNTW\0")?;
+            let translate = *lib.get::<unsafe extern "system" fn(i32,*const u16)->*mut u16>(b"J2K_TranslateMMNTW\0")?;
             let free = *lib.get::<unsafe extern "C" fn(*mut u16)->i32>(b"J2K_FreeMem\0")?;
             let id = CString::new("CSUSER123455")?;
             // JNA uses the Windows default ANSI codepage; CP949 is common on Korean Windows.
