@@ -140,7 +140,7 @@ mod tests{
     fn regex_lookaround_and_capture_replacements(){
         assert_eq!(normalize_groups("$0x$1_"),concat!("0","x","1","_"));
         let pattern=compile_pattern(r"(?<=猫)(は)(?=学生)").unwrap();
-        assert_eq!(pattern.try_replacen("猫は学生",0,"$1が").unwrap(),"猫はが学生");
+        assert_eq!(pattern.try_replacen("猫は学生",0,normalize_groups("$1が").as_str()).unwrap(),"猫はが学生");
         let pattern=compile_pattern(r"([ー─])\1+").unwrap();
         assert_eq!(pattern.try_replacen("ーー─",0,"$1").unwrap(),"ー─");
     }
