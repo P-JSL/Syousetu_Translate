@@ -1,0 +1,10 @@
+/target/
+*.tmp
+*.backup
+.local/
+engine/
+Dat/
+J2KEngine*.dll
+*.exe
+*.zip
+config/dictionary.txt
