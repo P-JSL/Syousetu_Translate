@@ -176,6 +176,18 @@ mod tests{
         b[0]=0;assert!(inspect(&b).is_err());
     }
     #[test]
+    fn authentic_root_wrapper_if_available(){
+        // User-owned proprietary DLL is never stored in CI or Git.
+        let Some(path)=std::env::var_os("SYOUSETU_ROOT_DLL_PATH") else {return;};
+        let data=std::fs::read(path).expect("reading the local top-level J2KEngine.dll");
+        let report=inspect(&data).expect("parsing the local top-level DLL");
+        assert_eq!(report.declared_name,"EHND.dll");
+        assert_eq!(report.machine,0x14c);
+        assert_eq!(report.exports.len(),25);
+        assert!(report.matching_known_root_exports);
+        assert!(report.references_j2kengine_dlx);
+    }
+    #[test]
     fn rejects_truncated_and_non_pe(){
         assert!(inspect(&[]).is_err());
         assert!(inspect(&[b'M',b'Z']).is_err());
