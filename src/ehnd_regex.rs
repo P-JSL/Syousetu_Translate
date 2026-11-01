@@ -145,6 +145,36 @@ mod tests{
         assert_eq!(pattern.try_replacen("ーー─",0,"$1").unwrap(),"ー─");
     }
     #[test]
+    fn e2e_priority_stage_gating_and_strict_mode() {
+        use std::fs;
+        let dir=std::env::temp_dir().join(format!("ehnd-regex-fixture-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for (file,data) in [
+            ("ehnd_conf.ini","PREFILTER_SWITCH=ON\nPOSTFILTER_SWITCH=OFF\n"),
+            ("PreFilter_@Hdor.txt","猫\t개\t10\t0\n(개)(?=は)\t$1x\t20\t1\n_TGL\t_ON:ABC\tfoo\tbar\t30\t0\n"),
+            ("PreFilter_@Hdor_C.txt",""),
+            ("PostFilter_@Hdor.txt","개\t고양이\t10\t0\n"),
+            ("PostFilter_@Hdor_C.txt","")
+        ] {
+            fs::write(dir.join(file),data).unwrap();
+        }
+        let ehnd=Ehnd::load(&dir).unwrap();
+        let compiled=Executor::compile(&ehnd,false).unwrap();
+        assert_eq!(compiled.audit.literals,2);
+        assert_eq!(compiled.audit.regexes,1);
+        assert_eq!(compiled.audit.directives,1);
+        assert_eq!(compiled.apply(Phase::Pre,"猫は").unwrap(),"개xは");
+        assert_eq!(compiled.apply(Phase::Post,"개").unwrap(),"개");
+        assert!(Executor::compile(&ehnd,true).is_err());
+        for file in [
+            "ehnd_conf.ini","PreFilter_@Hdor.txt","PreFilter_@Hdor_C.txt",
+            "PostFilter_@Hdor.txt","PostFilter_@Hdor_C.txt"
+        ] {
+            fs::remove_file(dir.join(file)).unwrap();
+        }
+        fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn safe_failure_on_invalid_regex(){
         assert!(compile_pattern("(").is_err());
     }
