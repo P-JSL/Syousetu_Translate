@@ -260,6 +260,11 @@ mod tests {
         assert!(!ehnd.report().actual_engine_semantics_preserved);
         assert_eq!(ehnd.apply_literal(Phase::Pre,"A C+").unwrap(),"C C+");
         assert_eq!(ehnd.apply_literal(Phase::Post,"C").unwrap(),"OK");
+        fs::write(dir.join("ehnd_conf.ini"),
+            b"[CONFIG]\nPREFILTER_SWITCH=OFF\nPOSTFILTER_SWITCH=OFF\n").unwrap();
+        let disabled=Ehnd::load(&dir).unwrap();
+        assert_eq!(disabled.apply_literal(Phase::Pre,"A").unwrap(),"A");
+        assert_eq!(disabled.apply_literal(Phase::Post,"C").unwrap(),"C");
         for name in ["ehnd_conf.ini","PreFilter_@Hdor.txt","PreFilter_@Hdor_C.txt",
             "PostFilter_@Hdor.txt","PostFilter_@Hdor_C.txt"] {
             fs::remove_file(dir.join(name)).unwrap();
