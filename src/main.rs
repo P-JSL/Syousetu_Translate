@@ -122,6 +122,7 @@ fn help() {
   inspect-dat --dir PATH [--out inspection.json]
   inspect-root-dll --dll PATH [--out root-report.json]
   inspect-ehnd --dir PATH [--out ehnd-report.json]
+  compare-engines --eztrans-dir PATH --input corpus.txt [--out comparison.json]
   Experimental: --ehnd-dir PATH --ehnd-literal-only (native only)
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
@@ -169,6 +170,59 @@ fn inspect_ehnd(args:&[String])->Result<()> {
     } else { println!("{json}"); }
     Ok(())
 }
+/// Local differential harness: compare user-installed original EHND+DLX
+/// against native Rust. No source sentences are uploaded to GitHub.
+fn compare_engines(args:&[String])->Result<()> {
+    let install=PathBuf::from(require(args,"--eztrans-dir")?);
+    let input=PathBuf::from(require(args,"--input")?);
+    let text=fs::read_to_string(&input).context("비교 문장 파일은 UTF-8이어야 합니다")?;
+    let lines=text.lines().map(str::trim).filter(|x|!x.is_empty()&&!x.starts_with('#'))
+        .take(2000).collect::<Vec<_>>();
+    if lines.is_empty(){bail!("비교할 문장이 없습니다");}
+    // The real library is only loadable on 32-bit Windows.
+    let mut reference=create_engine(&EngineConfig{
+        mode:EngineMode::EzTrans,
+        eztrans_dir:Some(install),
+        native_dictionary:None,
+        strict_native:false,
+    })?;
+    let mut native=create_engine(&EngineConfig{
+        mode:EngineMode::Native,
+        eztrans_dir:None,
+        native_dictionary:value(args,"--native-dictionary").map(PathBuf::from),
+        strict_native:false,
+    })?;
+    let mut examples=Vec::new();
+    let mut matched=0usize;
+    for (index,&source) in lines.iter().enumerate() {
+        let reference_text=reference.translate(source)
+            .with_context(||format!("원본 DLL 비교 번역 실패: {}번 문장",index+1))?;
+        let native_text=native.translate(source)
+            .with_context(||format!("Rust 비교 번역 실패: {}번 문장",index+1))?;
+        if reference_text==native_text {matched+=1;} else if examples.len()<40 {
+            examples.push(serde_json::json!({
+                "line":index+1,
+                "japanese":source,
+                "reference":reference_text,
+                "native":native_text
+            }));
+        }
+    }
+    let report=serde_json::json!({
+        "reference":"user-installed top-level EHND J2KEngine.dll + J2KEngine.dlx",
+        "native":"independent Rust glossary engine",
+        "compared":lines.len(),
+        "exact_matches":matched,
+        "exact_match_rate":matched as f64/lines.len() as f64,
+        "all_semantics_verified":false,
+        "mismatch_examples":examples,
+    });
+    let serialized=serde_json::to_string_pretty(&report)?;
+    if let Some(output)=value(args,"--out") {
+        output::atomic_write(Path::new(&output),&serialized)?;
+    }else{println!("{serialized}");}
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -176,6 +230,7 @@ fn run()->Result<()> {
         Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
         Some("inspect-ehnd")=>inspect_ehnd(&args[2..]),
+        Some("compare-engines")=>compare_engines(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
         _=>{help();Ok(())}
