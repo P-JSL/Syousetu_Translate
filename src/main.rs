@@ -147,6 +147,7 @@ fn help() {
   inspect-root-dll --dll PATH [--out root-report.json]
   inspect-ehnd --dir PATH [--out ehnd-report.json]
   audit-ehnd-regex --dir PATH [--out audit.json] [--strict]
+  audit-ehnd-control --dir PATH [--out control-audit.json]
   Experimental: --ehnd-dir PATH --ehnd-regex-experimental [--ehnd-regex-strict]
   compare-engines --eztrans-dir PATH --input corpus.txt [--out comparison.json]
   Experimental: --ehnd-dir PATH --ehnd-literal-only (native only)
@@ -258,6 +259,15 @@ fn audit_ehnd_regex(args:&[String])->Result<()> {
     }else{println!("{serialized}");}
     Ok(())
 }
+fn audit_ehnd_control(args:&[String])->Result<()> {
+    let filters=Ehnd::load(Path::new(&require(args,"--dir")?))?;
+    let result=syousetu_translate::ehnd_control::audit(&filters);
+    let serialized=serde_json::to_string_pretty(&result)?;
+    if let Some(path)=value(args,"--out") {
+        output::atomic_write(Path::new(&path),&serialized)?;
+    }else{println!("{serialized}");}
+    Ok(())
+}
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -266,6 +276,7 @@ fn run()->Result<()> {
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
         Some("inspect-ehnd")=>inspect_ehnd(&args[2..]),
         Some("audit-ehnd-regex")=>audit_ehnd_regex(&args[2..]),
+        Some("audit-ehnd-control")=>audit_ehnd_control(&args[2..]),
         Some("compare-engines")=>compare_engines(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
