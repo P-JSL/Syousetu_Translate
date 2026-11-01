@@ -67,6 +67,36 @@ ezTrans XP.zip sample. The values must not be assumed universal across versions.
 * Set SYOUSETU_LEGACY_DAT_DIR to a local directory with the above files
   for the optional real-file test. Never upload proprietary samples to CI.
 
+## Original DLL provenance and confirmed symbols
+
+The archive contains **two different DLL families**:
+
+* Root J2KEngine.dll and J2KEngineH.dll: same SHA-256
+  751c7dad2fa62c9a62c7fa6eec09d691a897256bd5f308d76dd51810e12790b0
+  (364,032 bytes each). The PE export directory's library name is
+  EHND.dll; it has 25 exported entries, including J2K ABI wrappers.
+* translator/J2KEngine.dll: SHA-256
+  141a53735eddfd950b9939af00606d8869f5665b9b1ca63be4adfbd3648f5ca0
+  (2,998,272 bytes). This separate original 32-bit DLL has **466 exports**.
+  It must not be confused with the EHND wrapper when reconstructing grammar.
+
+The original translator DLL includes MSVC C++ exported names identifying
+these *possible reverse engineering entrypoints*:
+
+* CRuleTbl::DecryptLine, CRuleTbl::Save, CRuleRec, CDefRuleFld,
+  CSemanticRuleRec, CPostXltRule
+* trie_record_jis::loadDatabase, load_P_DA, load_S_DA, load_LA,
+  load_rec, inf_file_open, RetrieveRecords, SearchRecord, ReadRule
+* trie_record_jis::p_get_node, s_get_node, search_letter, suf_sear,
+  inv_code and code
+
+These symbols support the hypothesis that the dictionary uses a custom
+trie/index and an encoded rule table. They do NOT reveal layouts,
+parameter semantics, key schedules, algorithms, or grammar behavior.
+None of those internal functions has been faithfully reimplemented;
+the exported names are evidence of required future analysis, not a
+claim of bytecode compatibility.
+
 ## Known gaps (must not be labelled completed)
 
 1. Grammar opcodes and phrase-matching virtual machine for RuleKJ and CRuleKJ.
