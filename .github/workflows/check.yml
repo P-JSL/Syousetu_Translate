@@ -20,6 +20,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
           components: rustfmt, clippy
+      - name: Verify local engine installer with synthetic fixtures
+        run: python -m unittest discover -s scripts -p 'test_*.py'
       - run: cargo clippy --all-targets
       - run: cargo test --all-targets
       - run: cargo build --release --target ${{ matrix.target }}
