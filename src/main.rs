@@ -1,7 +1,7 @@
 mod engine;mod filter;mod network;mod output;mod site;
 use anyhow::{bail,Context,Result};
 use std::{env,fs,path::{Path,PathBuf}};
-use engine::{EngineConfig,create_engine};
+use engine::{EngineConfig,EngineMode,create_engine};
 use filter::{Dictionary,Pipeline};
 use network::Fetcher;
 use site::{parse_work,parse_episode,canonicalize};
@@ -12,8 +12,25 @@ fn num(args:&[String],key:&str,default:usize)->Result<usize>{
     value(args,key).map(|v|v.parse::<usize>().context(format!("잘못된 숫자: {key}"))).unwrap_or(Ok(default))
 }
 fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
-    create_engine(&EngineConfig {passthrough:flag(args,"--passthrough"),
-        eztrans_dir:value(args,"--eztrans-dir").map(PathBuf::from)})
+    let dll_path=value(args,"--eztrans-dir").map(PathBuf::from);
+    let engine=match value(args,"--engine").as_deref() {
+        Some("native")=>EngineMode::Native,
+        Some("eztrans")=>EngineMode::EzTrans,
+        Some("passthrough")=>EngineMode::Passthrough,
+        Some(name)=>bail!("잘못된 --engine: {name}; native|eztrans|passthrough"),
+        None if flag(args,"--passthrough")=>EngineMode::Passthrough,
+        None if dll_path.is_some()=>EngineMode::EzTrans,
+        None=>EngineMode::Native,
+    };
+    if flag(args,"--passthrough") && engine != EngineMode::Passthrough {
+        bail!("--passthrough와 --engine 값이 충돌합니다");
+    }
+    create_engine(&EngineConfig {
+        mode:engine,
+        eztrans_dir:dll_path,
+        native_dictionary:value(args,"--native-dictionary").map(PathBuf::from),
+        strict_native:flag(args,"--native-strict"),
+    })
 }
 fn pipeline_from_args(args:&[String])->Result<Pipeline>{
     let dict=match value(args,"--dictionary") {Some(file)=>Dictionary::from_file(Path::new(&file))?,None=>Dictionary::empty()};
@@ -84,9 +101,9 @@ fn help(){
   inspect --url URL [--html saved.html]\n\
   download --url URL --out novel.txt [--start N --end N] [--html work.html --episode-html-dir folder]\n\
   file --input novel.txt --out translated.txt\n\
-  Common: --passthrough | --eztrans-dir PATH (optional with local engine/), --dictionary PATH, --japanese\n\
+  Common: --engine native|eztrans|passthrough (default: native), --dictionary PATH, --japanese\n\  Native: --native-dictionary PATH [--native-strict]\n\  Legacy: --engine eztrans [--eztrans-dir PATH]; --passthrough\n\
   download: --furigana --delay-ms 1200 --retry 2\n\
-  `--passthrough` is a parser test, NOT a Japanese-to-Korean translation engine.\n\
+  Native is a limited dictionary translator, NOT equivalent to proprietary ezTrans.\n\  `--passthrough` is a parser test, NOT a Japanese-to-Korean translation engine.\n\
   Do not publish vendor DLLs or dictionaries without redistribution rights.\n");
 }
 fn run()->Result<()> {
