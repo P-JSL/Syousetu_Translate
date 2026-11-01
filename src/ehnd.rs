@@ -193,6 +193,13 @@ impl Ehnd {
     /// Does not claim production fidelity, and does not mutate source files.
     pub fn apply_literal(&self,phase:Phase,input:&str)->Result<String>{
         if input.len()>MAX_OUTPUT_BYTES {bail!("EHND 입력 길이 제한 초과");}
+        let key=match phase {
+            Phase::Pre=>"PREFILTER_SWITCH",
+            Phase::Post=>"POSTFILTER_SWITCH",
+        };
+        if self.config.iter().any(|(name,value)|name==key && value.eq_ignore_ascii_case("OFF")) {
+            return Ok(input.to_owned());
+        }
         let mut output=input.to_owned();
         let mut items=self.rules.iter()
             .enumerate()
