@@ -45,6 +45,35 @@ The original Alphapolis Java parser loses DOM markup by calling `Jsoup.parse(tbo
 - Dynamic loading of a user-provided Windows ezTrans DLL (original J2K ABI), in a 32-bit compatible process
 - CI unit tests and builds on Linux/Windows
 
+## Local ezTrans installation (Windows x86)
+
+If you own a usable ezTrans XP installation, you can create a private local
+engine bundle from its ZIP without manually selecting DLLs.
+
+```powershell
+py -3 scripts/install_local_engine.py --archive "C:\\Downloads\\ezTrans XP.zip"
+cargo build --release --target i686-pc-windows-msvc
+.\\target\\i686-pc-windows-msvc\\release\\syousetu-translate.exe file --input original.txt --out translated.txt
+```
+
+The installer extracts `J2KEngine.dll` / `J2KEngineH.dll`, relevant
+support DLLs, `Dat/`, and optional `Ehnd/` into the Git-ignored `engine/`
+folder. It never overwrites an existing destination. For portable deployment,
+copy your own `engine/` beside the 32-bit executable. By default the program
+searches `engine/` beside the executable and in the current working directory.
+Use `--eztrans-dir PATH` or `SYOUSETU_EZTRANS_DIR` to override that location.
+
+The installer rejects ZIP path traversal and duplicate filenames, then
+verifies extracted byte counts. Synthetic fixture tests run with:
+
+```sh
+python -m unittest discover -s scripts -p 'test_*.py'
+```
+
+No vendor files are stored in Git. The supplied PE32 DLL exports the native
+`J2K_TranslateMMNTW` interface, but actual engine initialization/translation
+on Windows has not yet been smoke-tested.
+
 ## Known gaps and constraints
 
 - **The proprietary J2K translation engine itself is NOT ported into native Rust.** The original source package contains DLLs and data, not the underlying translation-engine implementation. It needs a user-provided licensed Windows DLL and Dat files, and its ABI and translation fidelity must be validated on a real machine.
