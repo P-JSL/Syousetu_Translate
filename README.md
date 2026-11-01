@@ -14,6 +14,49 @@ cargo build --release
 
 On Windows, build the **i686-pc-windows-msvc** target if you are using a 32-bit original ezTrans engine. GitHub Actions checks Linux x64 and Windows x86 on commits.
 
+## Rust-native J2K replacement (experimental)
+
+The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
+default. The package also compiles a native DLL exposing the original Java
+integration's **three** C exports: J2K_InitializeEx, J2K_TranslateMMNTW
+(UTF-16), and J2K_FreeMem. The Windows x86 artifact includes the executable and
+syousetu_translate.dll. If you need the Java application's historical DLL
+filename, rename a copy of the Rust DLL to J2KEngineH.dll and place it on
+jna.library.path; do not mix pointers from different DLL builds.
+
+**Important limitation:** This is NOT the ezTrans language engine recreated
+bit-for-bit. It does not implement its proprietary parser, morphological
+dictionary, grammar model, full transfer rules, or exact Japanese/Korean output.
+It is a limited curated glossary and Korean particle postprocessor; unsupported
+Japanese stays untranslated unless strict mode is enabled. It can be improved
+with user-supplied translation dictionaries, but identical novel translations
+are not currently possible. The commercial binary/dictionary is not needed for
+the native mode and is not redistributed.
+
+```sh
+cargo run -- file --input original.txt --out translated.txt --engine native
+cargo run -- file --input original.txt --out translated.txt --engine native --native-strict
+cargo run -- file --input original.txt --out translated.txt --native-dictionary myterms.tsv
+cargo build --release --target i686-pc-windows-msvc
+```
+
+The optional UTF-8 or UTF-16-BOM glossary format is one Japanese/Korean pair
+per line, separated by TAB. Additional columns are ignored, so user-owned
+Ehnd UserDict-style text files may be used. Last matching dictionary entry
+overrides a built-in translation; longest Japanese match wins for overlapping
+terms. For the DLL interface, set SYOUSETU_NATIVE_DICTIONARY to an absolute
+glossary path **before the first DLL initialization**. The DLL does not read
+the legacy Dat/ binary dictionary, and its InitializeEx path/ID parameters are
+ignored. All calls are UTF-16, return a DLL-owned allocation, and require
+J2K_FreeMem for each returned pointer. Only the three exports used by the
+archived Java client are currently provided.
+
+CLI compatibility: --engine eztrans and --eztrans-dir PATH retain the old
+licensed ezTrans DLL adapter; --passthrough retains raw Japanese for parser
+testing. Explicit --eztrans-dir without --engine still selects the legacy
+adapter. Default native mode cannot be treated as a production-grade
+Japanese-to-Korean translator.
+
 ## Commands
 
 ```shell
