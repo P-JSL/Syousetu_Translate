@@ -251,9 +251,10 @@ mod tests {
         assert_eq!(classify(&fields("a+\tb\t11110100\t1")).0,RuleType::Regex);
         assert_eq!(classify(&fields("_TGL\t_ON:x\tregex\trep\t11110100\t1")).0,RuleType::Directive);
         assert_eq!(classify(&fields("_skip_sub\tdata")).0,RuleType::Directive);
-        // A directive can have numeric values in standard filter columns;
-        // it is still a control instruction, never an ordinary rule.
-        assert_eq!(classify(&fields("_bad\tvalue\t100\t1")).0,RuleType::Directive);
+        // Exact control keywords take precedence over numeric rule metadata.
+        assert_eq!(classify(&fields("_SkipLayer\tvalue\t100\t1")),(RuleType::Directive,None));
+        // An ordinary regex may start with '_' without becoming a directive.
+        assert_eq!(classify(&fields("_bad\tvalue\t100\t1")),(RuleType::Regex,Some(100)));
     }
     #[test]
     fn config_switches(){
