@@ -1,10 +1,15 @@
 # Recovery and implementation status
 
+This is a historical recovery record. The recovered sources were subsequently
+committed in `9d0406f`, integrated with upstream `main` in `fbe2eeb`, and pushed.
+See [porting-status.md](porting-status.md) for the current translator7 web-client
+scope, source comparison, builds, tests and remaining Windows runtime checks.
+
 The original environment became unavailable. The replacement environment restored
 GitHub commit `7969c4360b820597a8ebe0c9673e9b28bfd06d4e`, without the previous
 uncommitted source changes, toolchain, reference ZIPs, or execution logs. The
-changes in this working tree were recovered from the conversation and agent
-context. They have not been committed or pushed.
+changes were recovered from the conversation and agent context before the
+later commits noted above.
 
 ## Recovered implementation
 

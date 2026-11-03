@@ -1,4 +1,5 @@
-mod config;mod engine;mod filter;mod network;mod options;mod output;mod session;mod site;
+mod engine;mod filter;mod network;mod options;mod output;mod session;mod site;
+use syousetu_translate::config;
 use anyhow::{bail,Context,Result};
 use std::{env,fs,path::{Path,PathBuf}};
 use engine::{EngineConfig,EngineMode,create_engine};
@@ -146,6 +147,7 @@ fn download(args:&[String])->Result<()> {
             .with_context(||format!("에피소드 {i} 파싱 실패: {}",work.episodes[i-1]))?;
         out.push_str(&output::format_episode(&mut session,&episode,i,end,&config)?);
         eprintln!("[{i}/{end}] 저장 대기: {}",episode.title);
+        emit_progress(args,i-first+1,end-first+1,"chapters");
     }
     output::atomic_write(&output,&out)?;
     println!("Saved {} episodes to {}",end-first+1,output.display());
@@ -155,8 +157,17 @@ fn file_translate(args:&[String])->Result<()> {
     let config=options::settings(args)?;
     let input=PathBuf::from(require(args,"--input")?);
     let output=PathBuf::from(require(args,"--out")?);
+    let mut session=translation_session(args,&config)?;
+    translate_file(&input,&output,&config,&mut session,args)
+}
+fn emit_progress(args:&[String],done:usize,total:usize,unit:&str){
+    if flag(args,"--progress-json") {
+        eprintln!("{}",serde_json::json!({"event":"progress","done":done,"total":total,"unit":unit}));
+    }
+}
+fn translate_file(input:&Path,output:&Path,config:&Config,session:&mut Session,args:&[String])->Result<()> {
     if input==output||output.canonicalize().ok().is_some_and(|path|input.canonicalize().ok()==Some(path)){bail!("입력 파일에 직접 덮어쓸 수 없습니다. 다른 출력 경로를 지정하세요");}
-    let bytes=fs::read(&input)?;
+    let bytes=fs::read(input)?;
     let contents=if let Some(name)=value(args,"--input-encoding"){
         if name.eq_ignore_ascii_case("latin1")||name.eq_ignore_ascii_case("iso-8859-1"){bytes.iter().map(|&byte|char::from(byte)).collect::<String>()}
         else{let encoding=encoding_rs::Encoding::for_label(name.as_bytes()).context("지원하지 않는 --input-encoding")?;let(text,_,bad)=encoding.decode(&bytes);if bad{bail!("입력 파일 디코딩 실패: {name}");}text.into_owned()}
@@ -166,19 +177,30 @@ fn file_translate(args:&[String])->Result<()> {
         let (v,_,invalid)=encoding_rs::UTF_16BE.decode(&bytes[2..]);if invalid{bail!("UTF-16BE 디코딩 오류");}v.into_owned()
     } else {String::from_utf8(bytes).context("UTF-8/UTF-16(BOM)이 아니면 --input-encoding을 지정하세요")?};
     let contents=contents.trim_start_matches('\u{feff}');
-    let mut session=translation_session(args,&config)?;
     let mut out=String::with_capacity(contents.len());
     let lines=contents.split_inclusive('\n').collect::<Vec<_>>();
     let raw_lines=lines.iter().map(|line|line.trim_end_matches('\n').trim_end_matches('\r').to_owned()).collect::<Vec<_>>();
-    let translated=session.translate_lines(&raw_lines)?;
+    let mut translated=Vec::with_capacity(raw_lines.len());
+    for chunk in raw_lines.chunks(128){
+        translated.extend(session.translate_lines(chunk)?);
+        emit_progress(args,translated.len(),raw_lines.len(),"lines");
+    }
     for(line,translation)in lines.into_iter().zip(translated){
         let raw=line.trim_end_matches('\n').trim_end_matches('\r');
         if config.print_japanese{out.push_str(raw);out.push('\n');}
         out.push_str(&translation);
         if line.ends_with('\n'){out.push('\n');}
     }
-    output::atomic_write(&output,&out)?;
+    output::atomic_write(output,&out)?;
     println!("Saved {}",output.display());
+    Ok(())
+}
+fn write_config(args:&[String])->Result<()> {
+    let config:Config=if let Some(path)=value(args,"--json"){
+        serde_json::from_slice(&fs::read(&path).with_context(||format!("설정 JSON 읽기 실패: {path}"))?)?
+    }else{options::settings(args)?};
+    let text=config.to_properties()?;
+    output::atomic_write(Path::new(&require(args,"--out")?),&text)?;
     Ok(())
 }
 fn help() {
@@ -195,6 +217,7 @@ fn help() {
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
   inspect-config [--config config/config.properties]
+  write-config --out config/config.properties [--json edited-settings.json]
 
   Engine: --engine native|eztrans|passthrough (default: native)
   Native: --native-dictionary PATH [--native-strict]
@@ -205,6 +228,7 @@ fn help() {
   Output: --title-format TEXT --page-number-format 000 --output-dir DIR --auto-output
   Network: --delay-ms 1200 --retry 2 --user-agent TEXT
   Offline index pagination: --html first.html --index-html-dir DIR (2.html, 3.html, ...)
+  Progress events: --progress-json (JSON lines on stderr)
 
   Native mode is limited glossary translation and is not identical to ezTrans.
   --passthrough is only for parser tests, not Japanese-to-Korean translation.
@@ -321,6 +345,7 @@ fn run()->Result<()> {
     match args.get(1).map(String::as_str) {
         Some("worker")=>{let config=options::settings(&args[2..])?;session::serve(local_session(&args[2..],&config)?)},
         Some("inspect-config")=>{println!("{}",serde_json::to_string_pretty(&options::settings(&args[2..])?)?);Ok(())},
+        Some("write-config")=>write_config(&args[2..]),
         Some("inspect")=>inspect(&args[2..]),
         Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),

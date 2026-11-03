@@ -10,6 +10,10 @@ cd /workspace/Syousetu_Translate
 bash scripts/install_cloud.sh
 ```
 
+To build the optional web GUI as well, use
+`SYOUSETU_BUILD_GUI=1 bash scripts/install_cloud.sh`. Linux GUI builds need the
+desktop development libraries listed in `.github/workflows/check.yml`.
+
 Requires a Linux C compiler/linker, Python 3, curl, and system CA certificates.
 The installer bootstraps the official Rust stable toolchain with Clippy and
 rustfmt when missing, fetches Cargo dependencies, and builds the debug CLI and
@@ -35,10 +39,17 @@ bash scripts/start_cloud.sh inspect-config
 bash scripts/start_cloud.sh file --input source.txt --out translated.txt --engine native
 ```
 
+In a Linux graphical session, `bash scripts/start_cloud.sh gui` starts the
+web-novel GUI after an offline incremental build. On Windows, use the checked-in
+`웹소설 번역기.bat` with the two built x86 executables. The GUI defaults to the
+real ezTrans backend; actual DLL translation requires Windows and the existing
+engine assets. A display server is needed for a desktop window; CLI and headless
+GUI rendering tests do not require one.
+
 Paths passed to the wrapper are relative to the checkout. Startup uses the
 retained lockfile and dependencies for an incremental offline build, then runs
 the CLI with the supplied arguments. Run installation again if tools or cached
-dependencies are missing. This project is a CLI/library; no background server,
+dependencies are missing. No background server,
 port, database, or persistent process needs to be restarted.
 
 After initial setup or a relevant environment change, an existing offline
@@ -69,7 +80,7 @@ reset source files, commit, push, or publish. Preserve working changes when
 switching environments. Saving `install_script` and `start_skill` in environment
 settings stores a draft; it does not publish a new environment snapshot.
 
-## Validation in this instance (2026-11-03)
+## Initial setup validation (2026-11-03)
 
 - Installed Rust/Cargo 1.99.1, Clippy, and rustfmt; Python 3.12.14 was available.
 - Built the Linux debug CLI and `libsyousetu_translate.so`.
@@ -79,3 +90,8 @@ settings stores a draft; it does not publish a new environment snapshot.
   `Cargo.lock` stayed byte-for-byte unchanged.
 - Windows x86, proprietary assets, live-site downloads, and the remaining
   test suites were not rerun. A fresh-task snapshot restoration was not tested.
+
+The later web-client port has its own current validation record in
+[porting-status.md](porting-status.md), including Windows x86 cross-compilation,
+desktop queue integration and headless GUI rendering. Those later checks do not
+establish licensed-engine runtime behavior on Windows.

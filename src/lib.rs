@@ -14,6 +14,9 @@ pub mod root_dll;
 pub mod ehnd;
 pub mod ehnd_regex;
 pub mod ehnd_control;
+pub mod config;
+pub mod storage;
+pub mod jobs;
 
 use native::NativeTranslator;
 use std::{

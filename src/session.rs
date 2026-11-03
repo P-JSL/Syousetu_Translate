@@ -47,12 +47,24 @@ impl Session {
             Self::Pool(workers) => {
                 let mut result = Vec::with_capacity(lines.len());
                 for chunk in lines.chunks(workers.len()) {
+                    let mut failure = None;
+                    let mut sent = 0;
                     for (worker, text) in workers.iter_mut().zip(chunk) {
-                        worker.send(text)?;
+                        match worker.send(text) {
+                            Ok(()) => sent += 1,
+                            Err(error) => { failure = Some(error); break; }
+                        }
                     }
-                    for worker in workers.iter_mut().take(chunk.len()) {
-                        result.push(worker.translation()?);
+                    // Drain every submitted response, including after an error,
+                    // so a later task cannot consume the previous task's result.
+                    for worker in workers.iter_mut().take(sent) {
+                        match worker.translation() {
+                            Ok(text) => result.push(text),
+                            Err(error) if failure.is_none() => failure = Some(error),
+                            Err(_) => {}
+                        }
                     }
+                    if let Some(error) = failure { return Err(error); }
                 }
                 Ok(result)
             }
@@ -66,13 +78,17 @@ pub struct Worker {
 }
 impl Worker {
     fn spawn(args: &[String]) -> Result<Self> {
-        let mut process = Command::new(std::env::current_exe()?)
-            .arg("worker")
+        let mut command = Command::new(std::env::current_exe()?);
+        command.arg("worker")
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
+            .stderr(Stdio::inherit());
+        #[cfg(windows)] {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut process = command.spawn()
             .context("번역 worker 프로세스 시작 실패")?;
         let input = BufWriter::new(process.stdin.take().context("worker stdin 없음")?);
         let output = process.stdout.take().context("worker stdout 없음")?;

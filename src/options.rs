@@ -85,6 +85,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--ehnd-regex-experimental",
         "--ehnd-regex-strict",
         "--ehnd-literal-only",
+        "--progress-json",
     ];
     let download_values = [
         "--url",
@@ -138,6 +139,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
             "--user-agent",
         ]),
         "inspect-config" => values.push("--config"),
+        "write-config" => values.extend(["--config", "--json", "--out"]),
         "inspect-root-dll" => values.extend(["--dll", "--out"]),
         "inspect-dat" | "inspect-ehnd" | "audit-ehnd-control" => values.extend(["--dir", "--out"]),
         "audit-ehnd-regex" => {
@@ -173,6 +175,9 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
     }
     if flag(args, "--out") && flag(args, "--output-dir") {
         bail!("--out과 --output-dir는 함께 사용할 수 없습니다");
+    }
+    if command == "write-config" && flag(args, "--json") && flag(args, "--config") {
+        bail!("--json과 --config는 함께 사용할 수 없습니다");
     }
     Ok(())
 }

@@ -10,5 +10,10 @@ if ! command -v cargo >/dev/null 2>&1 || [[ ! -f Cargo.lock ]]; then
 fi
 
 # Incremental compilation prevents accidentally running an older source build.
+if [[ "${1:-}" == gui ]]; then
+    shift
+    cargo build --locked --offline --features gui --bin syousetu-gui
+    exec "$CARGO_TARGET_DIR/debug/syousetu-gui" "$@"
+fi
 cargo build --locked --offline --bin syousetu-translate
 exec "$CARGO_TARGET_DIR/debug/syousetu-translate" "$@"

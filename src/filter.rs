@@ -103,10 +103,11 @@ impl Pipeline {
         while input.contains(&dictionary_prefix){dictionary_prefix.push('_');}
         let mut protected=Vec::<(String,String,bool)>::new();
         let mut work=String::with_capacity(input.len());
-        let mut chars=input.char_indices().peekable();
+        // translator7 normalizes full-width punctuation before BracketFilter.
+        let normalized:String=input.chars().map(|c|match c{'～'=>'~','（'=>'(','）'=>')','？'=>'?',_=>c}).collect();
+        let mut chars=normalized.char_indices().peekable();
         while let Some((_,c))=chars.next() {
             match c {
-                '～'=>work.push('~'),'（'=>work.push('('),'）'=>work.push(')'),'？'=>work.push('?'),
                 '('|'[' => {
                     let close=if c=='(' {')'} else {']'};
                     let mut part=String::new();let mut found=false;
@@ -180,6 +181,14 @@ impl Pipeline {
         }
         let pipeline=super::Pipeline::legacy(super::Dictionary::parse("猫\t고양이[이름]").unwrap());
         assert_eq!(pipeline.translate(&mut Annotated,"猫 (犬)").unwrap(),"고양이[이름] (犬)");
+    }
+    #[test] fn fullwidth_brackets_are_protected_after_punctuation_normalization(){
+        struct Annotated;
+        impl crate::engine::Translator for Annotated {
+            fn translate(&mut self,text:&str)->anyhow::Result<String>{Ok(format!("{text}[annotation]"))}
+        }
+        let pipeline=super::Pipeline::legacy(super::Dictionary::parse("猫\t고양이").unwrap());
+        assert_eq!(pipeline.translate(&mut Annotated,"こんにちは（猫）？").unwrap(),"こんにちは(고양이)?");
     }
     use super::*;
     use crate::engine::Passthrough;

@@ -1,4 +1,4 @@
-//! Previously validated synthetic workflow regressions, retained for future changes.
+//! Offline CLI workflow regressions, including source-backed migration work.
 use std::{
     fs,
     path::PathBuf,
@@ -255,4 +255,41 @@ fn invalid_options_and_aliased_input_paths_fail() {
     }
     assert_eq!(w.read("source.txt"), "こんにちは\n");
     assert!(!w.0.join("out.txt").exists());
+}
+
+#[test]
+fn config_dialog_json_properties_roundtrip_and_failed_save_preserves_file() {
+    let w = Workspace::new();
+    let result = success(w.run(&["inspect-config"]));
+    let mut config: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    config["title_format"] = " [currentPage]\n[koreanTitle] 😀".into();
+    config["comment_separator"] = " \t코멘트\r\n\\끝".into();
+    config["eztrans_path"] = "C:\\번역기\\ezTrans XP".into();
+    w.write("edited.json", serde_json::to_vec(&config).unwrap());
+    success(w.run(&[
+        "write-config",
+        "--json",
+        "edited.json",
+        "--out",
+        "settings.properties",
+    ]));
+    let result = success(w.run(&["inspect-config", "--config", "settings.properties"]));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),
+        config
+    );
+    let saved = w.read("settings.properties");
+    config["max_retry_count"] = 99.into();
+    w.write("edited.json", serde_json::to_vec(&config).unwrap());
+    assert!(!w
+        .run(&[
+            "write-config",
+            "--json",
+            "edited.json",
+            "--out",
+            "settings.properties"
+        ])
+        .status
+        .success());
+    assert_eq!(w.read("settings.properties"), saved);
 }

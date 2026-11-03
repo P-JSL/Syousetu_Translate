@@ -36,5 +36,7 @@ if [[ -f Cargo.lock ]]; then
 else
     cargo fetch
 fi
-cargo build --locked --bins --lib
+build_args=(--locked --bins --lib)
+if [[ "${SYOUSETU_BUILD_GUI:-0}" == 1 ]]; then build_args+=(--features gui); fi
+cargo build "${build_args[@]}"
 "$CARGO_TARGET_DIR/debug/syousetu-translate" --help

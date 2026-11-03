@@ -1,8 +1,12 @@
 # Syousetu Translate — Rust migration
 
-**Development status: Rust CLI prototype; engine/GUI feature parity is not complete.**
+**Development status: Rust CLI and desktop web-novel client using the original ezTrans engine on Windows x86.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
+
+Both user-provided ZIPs were downloaded and checked against their SHA-256
+records on 2026-11-03. Their client differences, Rust module mapping, and
+remaining compatibility limits are recorded in [docs/porting-status.md](docs/porting-status.md).
 
 ## Build and test
 
@@ -11,6 +15,33 @@ cargo test --all-targets
 cargo clippy --all-targets
 cargo build --release
 ```
+
+The optional Rust desktop client ports the `translator7.zip` web launcher:
+**BAT → GUI → URL → Run → translation and save**, together with its settings
+dialog and ordered task queue. Build both executables together, then start it:
+
+```sh
+cargo build --locked --features gui --bins
+./target/debug/syousetu-gui
+```
+
+Keep `syousetu-gui` and `syousetu-translate` in the same directory (on Windows,
+both use `.exe`). On Windows, launch **`웹소설 번역기.bat`**. The GUI defaults
+to the real `eztrans` backend when no settings file exists. Output selection,
+chapter ranges, settings save/load,
+queue reordering, per-task settings snapshots, errors and progress are supported.
+Linux needs a graphical desktop and the X11/Wayland/OpenGL development packages
+listed in CI. A Korean system font is loaded automatically; `SYOUSETU_FONT`
+can select a local font. The CLI does not require the `gui` feature or a display.
+
+Java/JRE/JavaFX and the complete ezTrans XP application are not needed by the
+Rust client. Keep your existing working ezTrans installation and select its
+folder in Settings, or create the private `engine/` bundle described below.
+The translation DLL and its own data/dependencies are still required; replacing
+that translation engine is outside this web-client port.
+
+The `SyousetuTranslate-Web-Windows-x86` CI artifact contains a flat web-client
+package with both executables, the BAT launcher and a [Windows usage guide](docs/windows-web-client.md).
 
 On Windows, build the **i686-pc-windows-msvc** target if you are using a 32-bit original ezTrans engine. GitHub Actions checks Linux x64 and Windows x86 on commits.
 
@@ -96,8 +127,8 @@ mode does not enable EHND filters. See docs/ehnd-parity-status.md.
 
 The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
 default. The package also compiles a native DLL exposing the original Java
-integration's **three** C exports: J2K_InitializeEx, J2K_TranslateMMNTW
-(UTF-16), and J2K_FreeMem. The Windows x86 artifact includes the executable and
+clients' **four** C exports: J2K_InitializeEx, J2K_TranslateMMNTW
+(UTF-16), J2K_TranslateMMNT (Shift-JIS input / CP949 output), and J2K_FreeMem. The Windows x86 artifact includes both executables and
 syousetu_translate.dll. If you need the Java application's historical DLL
 filename, rename a copy of the Rust DLL to J2KEngineH.dll and place it on
 jna.library.path; do not mix pointers from different DLL builds.
@@ -126,8 +157,8 @@ terms. For the DLL interface, set SYOUSETU_NATIVE_DICTIONARY to an absolute
 glossary path **before the first DLL initialization**. The DLL does not read
 the legacy Dat/ binary dictionary, and its InitializeEx path/ID parameters are
 ignored. All calls are UTF-16, return a DLL-owned allocation, and require
-J2K_FreeMem for each returned pointer. Only the three exports used by the
-archived Java client are currently provided.
+J2K_FreeMem for each returned pointer. The four client-used exports and limited
+lifecycle aliases do not reproduce all 25 original wrapper exports.
 
 CLI compatibility: --engine eztrans and --eztrans-dir PATH retain the old
 licensed ezTrans DLL adapter; --passthrough retains raw Japanese for parser
@@ -200,7 +231,11 @@ on Windows has not yet been smoke-tested.
 ## Known gaps and constraints
 
 - **The proprietary J2K translation engine itself is NOT ported into native Rust.** The original source package contains DLLs and data, not the underlying translation-engine implementation. It needs a user-provided licensed Windows DLL and Dat files, and its ABI and translation fidelity must be validated on a real machine.
-- The original JavaFX GUI, config editor, asynchronous job pipeline and multiprocessing DLL workers are not yet ported.
+- The `translator7` web GUI, settings editor, task queue and isolated DLL workers
+  have Rust counterparts. The file/directory GUI and the older client's ANSI API
+  are outside the selected web-workflow scope; existing CLI file commands remain.
+- Browser/Selenium fallback and driver patching are not implemented. Use ordinary
+  HTTP access or saved HTML; login, paid-content and CAPTCHA barriers are not bypassed.
 - All production-site HTML variants, full work completeness, and original-vs-Rust translations have not been exhaustively tested.
 - Aho–Corasick dictionary matching runs in approximately O(input length + matches) after preprocessing; network waits and native model translation are not guaranteed O(n).
 

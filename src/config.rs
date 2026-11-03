@@ -1,9 +1,10 @@
 //! Source-visible Java Properties settings, with explicit CLI compatibility.
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::Path};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub print_japanese: bool,
     pub title_format: String,
@@ -150,6 +151,65 @@ impl Config {
             self.max_cpu_core_count as usize
         };
         maximum.min(16).min(available).max(1)
+    }
+
+    /// Persist all settings using the Java client's UTF-8 Properties format.
+    /// Validation happens before callers replace an existing settings file.
+    pub fn to_properties(&self) -> Result<String> {
+        fn escape(value: &str) -> String {
+            let mut out = String::new();
+            for (index, ch) in value.chars().enumerate() {
+                match ch {
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    '\u{c}' => out.push_str("\\f"),
+                    ' ' if index == 0 => out.push_str("\\ "),
+                    _ => out.push(ch),
+                }
+            }
+            out
+        }
+        let mut result = "# Syousetu Translate settings (UTF-8)\nconfig_version=1.7\n".to_owned();
+        let fields = [
+            ("print_japanese", self.print_japanese.to_string()),
+            ("title_format", self.title_format.clone()),
+            (
+                "filter_title_bracket",
+                self.filter_title_bracket.to_string(),
+            ),
+            ("page_number_format", self.page_number_format.clone()),
+            ("page_download_delay", self.page_download_delay.to_string()),
+            (
+                "hameln_page_download_delay",
+                self.hameln_page_download_delay.to_string(),
+            ),
+            ("max_retry_count", self.max_retry_count.to_string()),
+            ("max_cpu_core_count", self.max_cpu_core_count.to_string()),
+            ("include_furigana", self.include_furigana.to_string()),
+            ("include_comment", self.include_comment.to_string()),
+            ("comment_separator", self.comment_separator.clone()),
+            ("translator_name", self.translator_name.clone()),
+            (
+                "eztrans_path",
+                self.eztrans_path.clone().unwrap_or_default(),
+            ),
+            ("user_agent", self.user_agent.clone()),
+            ("max_title_length", self.max_title_length.to_string()),
+            (
+                "save_without_file_chooser",
+                self.save_without_file_chooser.to_string(),
+            ),
+        ];
+        for (key, value) in fields {
+            result.push_str(key);
+            result.push('=');
+            result.push_str(&escape(&value));
+            result.push('\n');
+        }
+        Self::parse(&result)?;
+        Ok(result)
     }
 }
 pub fn format_number(number: usize, pattern: &str) -> Result<String> {
