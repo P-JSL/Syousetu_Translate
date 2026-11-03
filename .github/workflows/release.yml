@@ -1,0 +1,80 @@
+name: Stage web release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example v0.1.0)
+        required: true
+        type: string
+      run_id:
+        description: Successful Rust CI run for the exact tagged commit
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: web-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      CI_RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tagged source and successful platform builds
+        id: verify
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          tag, run_id = os.environ['RELEASE_TAG'], os.environ['CI_RUN_ID']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', tag)
+          assert run_id.isdigit() and int(run_id) > 0
+          repo = os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}']))
+          source = subprocess.check_output(['git', 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}'], text=True).strip()
+          assert re.fullmatch(r'[0-9a-f]{40}', source)
+          run = api(f'actions/runs/{run_id}')
+          assert run['name'] == 'Rust CI'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['head_sha'] == source
+          jobs = api(f'actions/runs/{run_id}/jobs?per_page=100')['jobs']
+          required = {'checks (ubuntu-latest)', 'checks (windows-latest)'}
+          assert required <= {j['name'] for j in jobs if j['conclusion'] == 'success'}
+          release = api(f'releases/tags/{tag}')
+          assert release['draft'], 'Only unpublished draft assets may be replaced'
+          artifacts = api(f'actions/runs/{run_id}/artifacts')['artifacts']
+          matches = [a for a in artifacts if a['name'] == 'SyousetuTranslate-Web-Windows-x86' and not a['expired']]
+          assert len(matches) == 1
+          assert matches[0]['workflow_run']['head_sha'] == source
+          Path('release-artifact.json').write_text(json.dumps(matches[0]))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'source_sha={source}\n')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: SyousetuTranslate-Web-Windows-x86
+          path: build/web-client
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify and package the web client
+        env:
+          SOURCE_SHA: ${{ steps.verify.outputs.source_sha }}
+        run: |
+          python3 scripts/package_web_release.py --artifact-dir build/web-client --metadata release-artifact.json --output-dir dist/release --version "$RELEASE_TAG" --source-commit "$SOURCE_SHA" --run-id "$CI_RUN_ID"
+      - name: Upload assets to the existing draft
+        run: |
+          gh release upload "$RELEASE_TAG" dist/release/*.zip dist/release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
