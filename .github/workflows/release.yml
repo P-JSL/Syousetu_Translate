@@ -54,7 +54,10 @@ jobs:
           jobs = api(f'actions/runs/{run_id}/jobs?per_page=100')['jobs']
           required = {'checks (ubuntu-latest)', 'checks (windows-latest)'}
           assert required <= {j['name'] for j in jobs if j['conclusion'] == 'success'}
-          release = api(f'releases/tags/{tag}')
+          # Tag lookup returns published releases; locate drafts in the list.
+          releases = [r for r in api('releases?per_page=100') if r['tag_name'] == tag]
+          assert len(releases) == 1, 'Expected exactly one release draft for this tag'
+          release = releases[0]
           assert release['draft'], 'Only unpublished draft assets may be replaced'
           artifacts = api(f'actions/runs/{run_id}/artifacts')['artifacts']
           matches = [a for a in artifacts if a['name'] == 'SyousetuTranslate-Web-Windows-x86' and not a['expired']]
