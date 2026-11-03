@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
 CORE_DLLS = {"J2KEngine.dll", "J2KEngineH.dll"}
+ENGINE_DEPENDENCY = "J2KEngine.dlx"
 SUPPORT_DLLS = {"JKPreProcess.dll", "K2JEngine.dll"}
 ASSET_FOLDERS = {"Dat", "Ehnd"}
 MAX_UNPACKED_BYTES = 512 * 1024 * 1024
@@ -29,7 +30,7 @@ def members_to_install(archive: ZipFile):
                 or not path.parts or ":" in path.parts[0]):
             raise ValueError(f"Unsafe archive path: {raw_name!r}")
         top_level = len(path.parts) == 1
-        allowed = ((top_level and path.name in CORE_DLLS | SUPPORT_DLLS)
+        allowed = ((top_level and path.name in CORE_DLLS | SUPPORT_DLLS | {ENGINE_DEPENDENCY})
                    or (len(path.parts) > 1 and path.parts[0] in ASSET_FOLDERS))
         if not allowed:
             continue
@@ -45,6 +46,8 @@ def members_to_install(archive: ZipFile):
         selected.append((member, path))
     if not any(str(path) in CORE_DLLS for _, path in selected):
         raise ValueError("J2KEngine.dll or J2KEngineH.dll is missing")
+    if not any(str(path) == ENGINE_DEPENDENCY for _, path in selected):
+        raise ValueError("Required root engine dependency J2KEngine.dlx is missing")
     if not any(path.parts[0] == "Dat" for _, path in selected):
         raise ValueError("Dat dictionary folder is missing")
     return selected

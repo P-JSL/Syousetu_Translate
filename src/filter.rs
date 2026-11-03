@@ -10,14 +10,18 @@ impl Dictionary {
     pub fn empty()->Self{ Self{entries:Vec::new(),matcher:None} }
     pub fn parse(text:&str)->Result<Self>{
         let mut entries=Vec::<DictionaryEntry>::new();let mut indices=HashMap::new();
-        for line in text.lines().map(|x|x.trim_end_matches('\r')) {
+        for line in text.trim_start_matches('\u{feff}').lines().map(|x|x.trim_end_matches('\r')) {
             if line.trim().is_empty() || line.trim_start().starts_with("//") {continue;}
-            let mut parts=line.splitn(2,'\t');
-            let source=parts.next().unwrap_or("").trim_end_matches("#N").to_owned();
+            let mut parts=line.split('\t');
+            let raw_source=parts.next().unwrap_or("");
+            let source=raw_source.trim_end_matches("#N").to_owned();
             if source.is_empty(){continue;}
             let raw_target=parts.next().unwrap_or("");
-            let (target,name)=if raw_target.is_empty(){(hiragana_to_hangul(&source),line.ends_with("#N"))}
-                else{(raw_target.trim_end_matches("#N").to_owned(),line.ends_with("#N")||raw_target.ends_with("#N"))};
+            let (target,name)=if raw_target.is_empty(){
+                let converted=hiragana_to_hangul(&source);
+                if is_japanese(&converted){continue;}
+                (converted,raw_source.ends_with("#N"))
+            }else{(raw_target.trim_end_matches("#N").to_owned(),raw_source.ends_with("#N")||raw_target.ends_with("#N"))};
             if target.is_empty(){continue;}
             let entry=DictionaryEntry{source:source.clone(),target,name};
             if let Some(&idx)=indices.get(&source){entries[idx]=entry;}
@@ -47,7 +51,7 @@ fn hiragana_to_hangul(input:&str)->String{
     let digraphs=[("きゃ","캬"),("きゅ","큐"),("きょ","쿄"),("しゃ","샤"),("しゅ","슈"),("しょ","쇼"),("ちゃ","챠"),("ちゅ","츄"),("ちょ","쵸"),("にゃ","냐"),("にゅ","뉴"),("にょ","뇨"),("ひゃ","햐"),("ひゅ","휴"),("ひょ","효"),("みゃ","먀"),("みゅ","뮤"),("みょ","묘"),("りゃ","랴"),("りゅ","류"),("りょ","료"),("ぎゃ","갸"),("ぎゅ","규"),("ぎょ","교"),("じゃ","자"),("じゅ","주"),("じょ","조"),("びゃ","뱌"),("びゅ","뷰"),("びょ","뵤"),("ぴゃ","퍄"),("ぴゅ","퓨"),("ぴょ","표")];
     let mut out=String::new();let mut chars=converted.chars().peekable();
     while let Some(c)=chars.next(){
-        if c=='っ' {if let Some(next)=chars.peek(){if let Some(v)=map.get(next){out.push_str(v.chars().next().map(|x|x.to_string()).unwrap_or_default().as_str());}} continue;}
+        if c=='っ' && chars.peek().is_some() {if let Some(next)=chars.peek(){if let Some(v)=map.get(next){out.push_str(v.chars().next().map(|x|x.to_string()).unwrap_or_default().as_str());}} continue;}
         if let Some(next)=chars.peek(){let mut pair=String::new();pair.push(c);pair.push(*next);
             if let Some((_,kor))=digraphs.iter().find(|(jp,_)|*jp==pair){out.push_str(kor);chars.next();continue;}}
         if let Some(kor)=map.get(&c){out.push_str(kor);} else {out.push(c);}
@@ -83,15 +87,20 @@ fn resolve_token(replacement:&str, remaining:&str)->(String,usize) {
     }
     (replacement.to_owned(),marker_len)
 }
-pub struct Pipeline {pub dictionary:Dictionary}
+pub struct Pipeline {pub dictionary:Dictionary,strip_engine_brackets:bool}
 impl Pipeline {
-    pub fn new(dictionary:Dictionary)->Self{Self{dictionary}}
+    pub fn new(dictionary:Dictionary)->Self{Self{dictionary,strip_engine_brackets:false}}
+    pub fn legacy(dictionary:Dictionary)->Self{Self{dictionary,strip_engine_brackets:true}}
     pub fn translate(&self,engine:&mut dyn Translator,input:&str)->Result<String>{
         self.translate_inner(engine,input,0)
     }
     fn translate_inner(&self,engine:&mut dyn Translator,input:&str,depth:u8)->Result<String>{
         if input.is_empty()||!is_japanese(input){return Ok(input.to_owned());}
         if depth>12 {return engine.translate(input);}
+        let mut special_prefix="s$".to_owned();
+        while input.contains(&special_prefix){special_prefix.push('_');}
+        let mut dictionary_prefix="c$".to_owned();
+        while input.contains(&dictionary_prefix){dictionary_prefix.push('_');}
         let mut protected=Vec::<(String,String,bool)>::new();
         let mut work=String::with_capacity(input.len());
         let mut chars=input.char_indices().peekable();
@@ -107,11 +116,11 @@ impl Pipeline {
                     }
                     if found{
                         let inner=self.translate_inner(engine,&part,depth+1)?;
-                        let token=format!("s${}$s",protected.len());
+                        let token=format!("{special_prefix}{}$s",protected.len());
                         work.push_str(&token);protected.push((token,format!("{c}{inner}{close}"),false));
                     }else{work.push(c);work.push_str(&part);}
                 }
-                c if is_emoji(c)=>{let token=format!("s${}$s",protected.len());work.push_str(&token);protected.push((token,c.to_string(),false));}
+                c if is_emoji(c)=>{let token=format!("{special_prefix}{}$s",protected.len());work.push_str(&token);protected.push((token,c.to_string(),false));}
                 _=>work.push(c)
             }
         }
@@ -120,14 +129,22 @@ impl Pipeline {
             for hit in matcher.find_iter(&work){
                 output.push_str(&work[end..hit.start()]);
                 let item=&self.dictionary.entries[hit.pattern().as_usize()];
-                let token=format!("c${}$c",protected.len());
+                let token=format!("{dictionary_prefix}{}$c",protected.len());
                 output.push_str(&token);
                 if item.name{output.push_str("#N");}
                 protected.push((token,item.target.clone(),true));end=hit.end();
             }
             output.push_str(&work[end..]);work=output;
         }
-        let translated=engine.translate(&work)?;
+        let mut translated=engine.translate(&work)?;
+        if self.strip_engine_brackets {
+            let pattern=regex::Regex::new(r"\[[^\[\]]*\]|\([^()]*\)")?;
+            loop {
+                let stripped=pattern.replace_all(&translated, "");
+                if stripped.len()==translated.len(){break;}
+                translated=stripped.into_owned();
+            }
+        }
         if protected.is_empty(){return Ok(translated.trim_end().to_owned());}
         let tokens:Vec<&str>=protected.iter().map(|x|x.0.as_str()).collect();
         let matcher=AhoCorasickBuilder::new().match_kind(MatchKind::LeftmostLongest).build(&tokens)?;
@@ -144,6 +161,26 @@ impl Pipeline {
     }
 }
 #[cfg(test)] mod tests {
+    #[test] fn java_dictionary_readings_bom_and_extra_columns(){
+        let dictionary=super::Dictionary::parse("\u{feff}カナ#N\t가나\textra\n未知漢字\nきゃ\n").unwrap();
+        assert_eq!(dictionary.entries.len(),2);
+        assert!(dictionary.entries.iter().any(|e|e.source=="カナ"&&e.target=="가나"&&e.name));
+        assert!(dictionary.entries.iter().any(|e|e.source=="きゃ"&&e.target=="캬"));
+    }
+    #[test] fn literal_placeholder_strings_are_not_overwritten(){
+        let pipeline=super::Pipeline::new(super::Dictionary::parse("猫\t고양이").unwrap());
+        let mut engine=crate::engine::Passthrough;
+        assert_eq!(pipeline.translate(&mut engine,"c$0$c 猫 s$0$s 😀").unwrap(),"c$0$c 고양이 s$0$s 😀");
+        assert!(super::Dictionary::parse("っ\n").unwrap().entries.is_empty());
+    }
+    #[test] fn legacy_annotations_removed_before_protected_values_return(){
+        struct Annotated;
+        impl crate::engine::Translator for Annotated {
+            fn translate(&mut self,text:&str)->anyhow::Result<String>{Ok(format!("{text}[annotation](note)"))}
+        }
+        let pipeline=super::Pipeline::legacy(super::Dictionary::parse("猫\t고양이[이름]").unwrap());
+        assert_eq!(pipeline.translate(&mut Annotated,"猫 (犬)").unwrap(),"고양이[이름] (犬)");
+    }
     use super::*;
     use crate::engine::Passthrough;
     #[test] fn dictionary_overlaps(){

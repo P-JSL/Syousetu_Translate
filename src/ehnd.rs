@@ -82,10 +82,9 @@ fn read_text(path:&Path)->Result<String>{
     }
 }
 fn classify(fields:&[String])->(RuleType,Option<u64>){
-    // Directive rows may contain numeric-looking metadata in the normal
-    // literal/regex columns. Prefix classification MUST win, otherwise
-    // protected control rules are accidentally executed as replacements.
-    if fields.first().is_some_and(|s|s.starts_with('_')){
+    // Known control keywords take precedence over numeric metadata. Other
+    // patterns may start with '_' and remain ordinary replacement rules.
+    if fields.first().is_some_and(|s|matches!(s.as_str(),"_TGL"|"_skip_sub"|"_SkipLayer")){
         return (RuleType::Directive,None);
     }
     if fields.len()>=4 && !fields[0].is_empty() {
@@ -228,6 +227,22 @@ impl Ehnd {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn underscore_patterns_are_not_control_keywords() {
+        use super::*;
+        for (pattern, flag, expected) in [
+            ("_ㄹㅡㄴ∬해", "0", RuleType::Literal),
+            ("_prefix(?=suffix)", "1", RuleType::Regex),
+            ("_TGL_extra", "0", RuleType::Literal),
+        ] {
+            let fields=vec![pattern.into(),"replacement".into(),"10".into(),flag.into()];
+            assert_eq!(classify(&fields),(expected,Some(10)));
+        }
+        for keyword in ["_TGL","_skip_sub","_SkipLayer"] {
+            let fields=vec![keyword.into(),"replacement".into(),"10".into(),"0".into()];
+            assert_eq!(classify(&fields),(RuleType::Directive,None));
+        }
+    }
     use super::*;
     #[test]
     fn classify_literals_regex_and_directives(){
@@ -282,10 +297,10 @@ mod tests {
         let Some(directory)=std::env::var_os("SYOUSETU_EHND_DIR") else {return;};
         let set=Ehnd::load(Path::new(&directory)).unwrap();
         assert_eq!(set.counts.raw_lines,37_870);
-        assert_eq!(set.counts.literals,8_665);
-        assert_eq!(set.counts.regexes,8_595);
-        assert_eq!(set.counts.directives,3_177);
-        assert_eq!(set.counts.unknown,8);
+        assert_eq!(set.counts.literals,8_668);
+        assert_eq!(set.counts.regexes,8_597);
+        assert_eq!(set.counts.directives,3_173);
+        assert_eq!(set.counts.unknown,7);
         assert!(set.supporting_files.iter().all(|file|file.present));
         assert!(!set.report().actual_engine_semantics_preserved);
     }

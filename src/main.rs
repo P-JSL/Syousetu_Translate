@@ -1,7 +1,9 @@
-mod engine;mod filter;mod network;mod output;mod site;
+mod config;mod engine;mod filter;mod network;mod options;mod output;mod session;mod site;
 use anyhow::{bail,Context,Result};
 use std::{env,fs,path::{Path,PathBuf}};
 use engine::{EngineConfig,EngineMode,create_engine};
+use config::Config;
+use session::Session;
 use syousetu_translate::ehnd::{Ehnd, Phase};
 use syousetu_translate::ehnd_regex::Executor as EhndRegexExecutor;
 struct EhndRegexComparison {inner:Box<dyn engine::Translator>,executor:EhndRegexExecutor}
@@ -24,26 +26,29 @@ impl engine::Translator for EhndLiteralComparison {
 
 use filter::{Dictionary,Pipeline};
 use network::Fetcher;
-use site::{parse_work,parse_episode,canonicalize};
+use site::{canonicalize,parse_work_pages,parse_episode_with_comments,index_page_urls,Site,Work};
 
 fn value(args:&[String],key:&str)->Option<String>{args.windows(2).find(|x|x[0]==key).map(|x|x[1].clone())}
 fn flag(args:&[String],key:&str)->bool{args.iter().any(|x|x==key)}
 fn num(args:&[String],key:&str,default:usize)->Result<usize>{
     value(args,key).map(|v|v.parse::<usize>().context(format!("잘못된 숫자: {key}"))).unwrap_or(Ok(default))
 }
-fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
-    let dll_path=value(args,"--eztrans-dir").map(PathBuf::from);
+fn engine_from_args(args:&[String],config:&Config)->Result<Box<dyn engine::Translator>>{
+    let dll_path=value(args,"--eztrans-dir").or_else(||config.eztrans_path.clone()).map(PathBuf::from);
     let engine=match value(args,"--engine").as_deref() {
         Some("native")=>EngineMode::Native,
         Some("eztrans")=>EngineMode::EzTrans,
         Some("passthrough")=>EngineMode::Passthrough,
         Some(name)=>bail!("잘못된 --engine: {name}; native|eztrans|passthrough"),
         None if flag(args,"--passthrough")=>EngineMode::Passthrough,
-        None if dll_path.is_some()=>EngineMode::EzTrans,
-        None=>EngineMode::Native,
+        None if value(args,"--eztrans-dir").is_some()=>EngineMode::EzTrans,
+        None=>match config.translator_name.as_str(){"eztrans"=>EngineMode::EzTrans,"passthrough"=>EngineMode::Passthrough,_=>EngineMode::Native},
     };
     if flag(args,"--passthrough") && engine != EngineMode::Passthrough {
         bail!("--passthrough와 --engine 값이 충돌합니다");
+    }
+    if engine!=EngineMode::Native&&(flag(args,"--native-strict")||value(args,"--native-dictionary").is_some()){
+        bail!("--native-strict와 --native-dictionary는 --engine native에서만 사용할 수 있습니다");
     }
     if flag(args,"--ehnd-regex-strict") && !flag(args,"--ehnd-regex-experimental") {
         bail!("--ehnd-regex-strict는 --ehnd-regex-experimental과 함께 사용해야 합니다");
@@ -79,64 +84,97 @@ fn engine_from_args(args:&[String])->Result<Box<dyn engine::Translator>>{
     if flag(args,"--ehnd-dir") {bail!("--ehnd-dir에는 명시적인 --ehnd-literal-only가 필요합니다");}
     Ok(translator)
 }
-fn pipeline_from_args(args:&[String])->Result<Pipeline>{
-    let dict=match value(args,"--dictionary") {Some(file)=>Dictionary::from_file(Path::new(&file))?,None=>Dictionary::empty()};
-    Ok(Pipeline::new(dict))
+fn pipeline_from_args(args:&[String],config:&Config)->Result<Pipeline>{
+    let default=Path::new("config/dictionary.txt");
+    let passthrough=flag(args,"--passthrough")||value(args,"--engine").as_deref()==Some("passthrough")||(value(args,"--engine").is_none()&&value(args,"--eztrans-dir").is_none()&&config.translator_name=="passthrough");
+    let dict=match value(args,"--dictionary"){Some(file)=>Dictionary::from_file(Path::new(&file))?,None if default.is_file()&&!passthrough=>Dictionary::from_file(default)?,None=>Dictionary::empty()};
+    let legacy=value(args,"--engine").as_deref()==Some("eztrans")||(value(args,"--engine").is_none()&&!flag(args,"--passthrough")&&(value(args,"--eztrans-dir").is_some()||config.translator_name=="eztrans"));
+    Ok(if legacy{Pipeline::legacy(dict)}else{Pipeline::new(dict)})
 }
+fn local_session(args:&[String],config:&Config)->Result<Session>{Ok(Session::local(pipeline_from_args(args,config)?,engine_from_args(args,config)?))}
+fn translation_session(args:&[String],config:&Config)->Result<Session>{if config.workers()>1{Session::parallel(args,config.workers())}else{local_session(args,config)}}
 fn require(args:&[String],key:&str)->Result<String>{value(args,key).context(format!("필수 옵션 {key} 누락"))}
-fn inspect(args:&[String])->Result<()> {
+fn fetcher_for(args:&[String],config:&Config)->Result<Fetcher>{
+    let(site,_)=canonicalize(&require(args,"--url")?)?;
+    let delay=if site==Site::Hameln{config.hameln_page_download_delay}else{config.page_download_delay};
+    Fetcher::with_options(delay,config.max_retry_count,&config.user_agent)
+}
+fn load_work(args:&[String],fetcher:&Fetcher)->Result<Work>{
+    use std::collections::{BTreeMap,HashSet};
     let url=require(args,"--url")?;
-    let html=match value(args,"--html") {Some(path)=>fs::read_to_string(&path).context("HTML 파일 읽기 오류")?,
-        None=>Fetcher::new(num(args,"--delay-ms",1000)? as u64,1)?.get(&canonicalize(&url)?.1)?};
-    let work=parse_work(&url,&html)?;
+    let first=match value(args,"--html"){Some(path)=>fs::read_to_string(&path).with_context(||format!("목차 HTML 읽기 실패: {path}"))?,None=>fetcher.get(&canonicalize(&url)?.1)?};
+    let mut pages=vec![first];let mut pending=BTreeMap::new();let mut seen=HashSet::new();
+    loop{
+        for link in index_page_urls(&url,pages.last().unwrap())?{
+            if !seen.insert(link.clone()){continue;}
+            let parsed=url::Url::parse(&link)?;let number=parsed.query_pairs().find(|(key,_)|key=="p").context("목차 페이지 번호 없음")?.1.parse::<usize>()?;
+            if !(2..=1000).contains(&number){bail!("목차 페이지 범위 초과: {number}");}pending.insert(number,link);
+        }
+        let Some((number,link))=pending.pop_first()else{break;};
+        let html=if let Some(directory)=value(args,"--index-html-dir"){
+            let path=Path::new(&directory).join(format!("{number}.html"));fs::read_to_string(&path).with_context(||format!("목차 {number}페이지 HTML 없음: {}",path.display()))?
+        }else if value(args,"--html").is_some(){bail!("추가 목차가 필요합니다. --index-html-dir에 2.html, 3.html 등을 제공하세요");}
+        else{if !flag(args,"--no-delay"){fetcher.rest();}fetcher.get(&link)?};pages.push(html);
+    }
+    if pages.len()==1{site::parse_work(&url,&pages[0])}else{parse_work_pages(&url,&pages)}
+}
+fn inspect(args:&[String])->Result<()> {
+    let config=options::settings(args)?;
+    let work=load_work(args,&fetcher_for(args,&config)?)?;
     println!("{}",serde_json::to_string_pretty(&work)?);
     Ok(())
 }
 fn download(args:&[String])->Result<()> {
-    let url=require(args,"--url")?;
-    let output=PathBuf::from(require(args,"--out")?);
-    let fetcher=Fetcher::new(num(args,"--delay-ms",1200)?.max(500) as u64,num(args,"--retry",2)? as u32)?;
-    let html=match value(args,"--html") {Some(path)=>fs::read_to_string(path)?,None=>fetcher.get(&canonicalize(&url)?.1)?};
-    let work=parse_work(&url,&html)?;
+    let config=options::settings(args)?;
+    let fetcher=fetcher_for(args,&config)?;
+    let work=load_work(args,&fetcher)?;
     let first=num(args,"--start",1)?;
     if first==0 || first>work.episodes.len(){bail!("--start가 작품 화수 범위를 벗어났습니다");}
     let end=num(args,"--end",work.episodes.len())?.min(work.episodes.len());
     if first>end{bail!("--end가 --start보다 작습니다");}
-    let pipeline=pipeline_from_args(args)?;
-    let mut translator=engine_from_args(args)?;
-    let mut out=output::format_header(&pipeline,&mut *translator,&work)?;
+    let mut session=translation_session(args,&config)?;
+    let output=if let Some(path)=value(args,"--out"){PathBuf::from(path)}else if flag(args,"--auto-output")||value(args,"--output-dir").is_some()||config.save_without_file_chooser{
+        let directory=PathBuf::from(value(args,"--output-dir").unwrap_or_else(||".".into()));directory.join(output::suggested_filename(&session.translate(&work.title)?,&config)?)
+    }else{bail!("필수 옵션 --out 누락; 자동 이름은 --auto-output 또는 --output-dir을 지정하세요");};
+    let mut out=output::format_header(&mut session,&work)?;
     for i in first..=end {
         let file=value(args,"--episode-html-dir")
             .map(|dir|Path::new(&dir).join(format!("{i}.html")));
         let page=match file {Some(file)=>fs::read_to_string(&file).with_context(||format!("에피소드 HTML 없음: {}",file.display()))?,
-            None=>fetcher.get(&work.episodes[i-1])?};
-        let episode=parse_episode(work.site,&page,flag(args,"--furigana"))
+            None=>{if !flag(args,"--no-delay"){fetcher.rest();}fetcher.get(&work.episodes[i-1])?}};
+        let episode=parse_episode_with_comments(work.site,&page,config.include_furigana,config.include_comment,&config.comment_separator)
             .with_context(||format!("에피소드 {i} 파싱 실패: {}",work.episodes[i-1]))?;
-        out.push_str(&output::format_episode(&pipeline,&mut *translator,&episode,i,work.episodes.len(),flag(args,"--japanese"))?);
+        out.push_str(&output::format_episode(&mut session,&episode,i,end,&config)?);
         eprintln!("[{i}/{end}] 저장 대기: {}",episode.title);
-        if i!=end && !flag(args,"--no-delay"){fetcher.rest();}
     }
     output::atomic_write(&output,&out)?;
     println!("Saved {} episodes to {}",end-first+1,output.display());
     Ok(())
 }
 fn file_translate(args:&[String])->Result<()> {
+    let config=options::settings(args)?;
     let input=PathBuf::from(require(args,"--input")?);
     let output=PathBuf::from(require(args,"--out")?);
-    if input==output{bail!("입력 파일에 직접 덮어쓸 수 없습니다. 다른 출력 경로를 지정하세요");}
+    if input==output||output.canonicalize().ok().is_some_and(|path|input.canonicalize().ok()==Some(path)){bail!("입력 파일에 직접 덮어쓸 수 없습니다. 다른 출력 경로를 지정하세요");}
     let bytes=fs::read(&input)?;
-    let contents=if bytes.starts_with(&[0xff,0xfe]) {
+    let contents=if let Some(name)=value(args,"--input-encoding"){
+        if name.eq_ignore_ascii_case("latin1")||name.eq_ignore_ascii_case("iso-8859-1"){bytes.iter().map(|&byte|char::from(byte)).collect::<String>()}
+        else{let encoding=encoding_rs::Encoding::for_label(name.as_bytes()).context("지원하지 않는 --input-encoding")?;let(text,_,bad)=encoding.decode(&bytes);if bad{bail!("입력 파일 디코딩 실패: {name}");}text.into_owned()}
+    }else if bytes.starts_with(&[0xff,0xfe]) {
         let (v,_,invalid)=encoding_rs::UTF_16LE.decode(&bytes[2..]);if invalid{bail!("UTF-16LE 디코딩 오류");}v.into_owned()
     } else if bytes.starts_with(&[0xfe,0xff]) {
         let (v,_,invalid)=encoding_rs::UTF_16BE.decode(&bytes[2..]);if invalid{bail!("UTF-16BE 디코딩 오류");}v.into_owned()
-    } else {String::from_utf8(bytes).context("입력 인코딩은 UTF-8 또는 UTF-16(BOM)만 지원")?};
-    let pipeline=pipeline_from_args(args)?;
-    let mut translator=engine_from_args(args)?;
+    } else {String::from_utf8(bytes).context("UTF-8/UTF-16(BOM)이 아니면 --input-encoding을 지정하세요")?};
+    let contents=contents.trim_start_matches('\u{feff}');
+    let mut session=translation_session(args,&config)?;
     let mut out=String::with_capacity(contents.len());
-    for line in contents.split_inclusive('\n') {
+    let lines=contents.split_inclusive('\n').collect::<Vec<_>>();
+    let raw_lines=lines.iter().map(|line|line.trim_end_matches('\n').trim_end_matches('\r').to_owned()).collect::<Vec<_>>();
+    let translated=session.translate_lines(&raw_lines)?;
+    for(line,translation)in lines.into_iter().zip(translated){
         let raw=line.trim_end_matches('\n').trim_end_matches('\r');
-        if flag(args,"--japanese") && !raw.is_empty(){out.push_str(raw);out.push('\n');}
-        out.push_str(&pipeline.translate(&mut *translator,raw)?);
+        if config.print_japanese{out.push_str(raw);out.push('\n');}
+        out.push_str(&translation);
         if line.ends_with('\n'){out.push('\n');}
     }
     output::atomic_write(&output,&out)?;
@@ -156,12 +194,17 @@ fn help() {
   Experimental: --ehnd-dir PATH --ehnd-literal-only (native only)
   download --url URL --out novel.txt [--start N --end N]
   file --input novel.txt --out translated.txt
+  inspect-config [--config config/config.properties]
 
   Engine: --engine native|eztrans|passthrough (default: native)
   Native: --native-dictionary PATH [--native-strict]
   Legacy: --engine eztrans [--eztrans-dir PATH]
-  Common: --dictionary PATH, --japanese, --passthrough
-  Download: --furigana --delay-ms 1200 --retry 2
+  Common: --config PATH, --dictionary PATH, --japanese, --no-japanese, --jobs 1..16
+  File: --input-encoding shift_jis|euc-kr|utf-8|utf-16le|latin1
+  Download: --furigana --include-comments --comment-separator TEXT
+  Output: --title-format TEXT --page-number-format 000 --output-dir DIR --auto-output
+  Network: --delay-ms 1200 --retry 2 --user-agent TEXT
+  Offline index pagination: --html first.html --index-html-dir DIR (2.html, 3.html, ...)
 
   Native mode is limited glossary translation and is not identical to ezTrans.
   --passthrough is only for parser tests, not Japanese-to-Korean translation.
@@ -273,7 +316,11 @@ fn audit_ehnd_control(args:&[String])->Result<()> {
 }
 fn run()->Result<()> {
     let args:Vec<String>=env::args().collect();
+    if args.len()==1||args.iter().skip(1).any(|arg|arg=="--help"||arg=="-h")||args.get(1).map(String::as_str)==Some("help"){help();return Ok(());}
+    options::validate(&args[1],&args[2..])?;
     match args.get(1).map(String::as_str) {
+        Some("worker")=>{let config=options::settings(&args[2..])?;session::serve(local_session(&args[2..],&config)?)},
+        Some("inspect-config")=>{println!("{}",serde_json::to_string_pretty(&options::settings(&args[2..])?)?);Ok(())},
         Some("inspect")=>inspect(&args[2..]),
         Some("inspect-dat")=>inspect_dat(&args[2..]),
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
@@ -283,7 +330,7 @@ fn run()->Result<()> {
         Some("compare-engines")=>compare_engines(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
-        _=>{help();Ok(())}
+        _=>bail!("알 수 없는 명령"),
     }
 }
 fn main(){if let Err(e)=run(){eprintln!("ERROR: {e:#}");std::process::exit(1)}}

@@ -28,10 +28,10 @@ analysis of the user's original, local EHND files found:
 |---|---:|---|
 | All physical lines | 37,870 | Counted |
 | Comments / blank lines | 17,425 | Ignored intentionally |
-| Literal replacement definitions | 8,665 | Parsed; explicit comparison modes execute them |
-| Regex replacement definitions | 8,595 | Parsed; optional bounded regex executor added |
-| Stage-control directives (_TGL, _skip_sub, _SkipLayer, etc.) | 3,177 | Audited structurally; execution semantics unknown |
-| Unknown non-comment definitions | 8 | Preserved as raw fields; not interpreted |
+| Literal replacement definitions | 8,668 | Parsed; explicit comparison modes execute them |
+| Regex replacement definitions | 8,597 | Parsed; optional bounded regex executor added |
+| Stage-control directives (_TGL, _skip_sub, _SkipLayer) | 3,173 | Audited structurally; execution semantics unknown |
+| Unknown non-comment definitions | 7 | Preserved as raw fields; not interpreted |
 
 These are **rule definitions**, not independently established executable
 functions. The original conditional sequencing, skip-layer routing,
@@ -48,9 +48,11 @@ files are BOM-bearing UTF-8 or UTF-16; all are read from user-owned files.
 
 Exact input inspection found a parser-classification error: some control
 directives starting with underscore had numeric priority/type fields and
-were accidentally classified as ordinary rules. The fixed parser always
-classifies underscore directives first. The revised counts above replace
-the previous audit.
+were accidentally classified as ordinary rules. The parser now recognizes only the exact `_TGL`, `_SkipLayer`, and
+`_skip_sub` keywords before numeric metadata. The former underscore-prefix
+test also misclassified ordinary patterns such as `_ㄹㅡㄴ∬해`. The table
+above reflects the corrected classification recorded in the shared analysis;
+the original corpus was not re-downloaded or rechecked after environment recovery.
 
 On the locally supplied EHND files, the independent Python regex compiler
 accepted all 8,595 active regex patterns in a *syntax-only* check.

@@ -66,10 +66,11 @@ docs/root-dll-scope.md.
 
 ## Experimental EHND regex and control-flow audit
 
-Original EHND filter files include 8,665 ordinary literal rules,
-8,595 ordinary regex rules, 3,177 conditional directives, and 8
-unclassified definitions. The structural parser now prioritizes
-underscore-prefixed directives over numeric columns.
+Original EHND filter files include 8,668 ordinary literal rules,
+8,597 ordinary regex rules, 3,173 conditional directives, and 7
+unclassified definitions. The structural parser recognizes the exact `_TGL`, `_SkipLayer`, and
+`_skip_sub` control keywords before numeric columns. Other patterns starting
+with an underscore remain ordinary rules.
 
 An explicitly enabled *experimental* Rust filter executor supports
 lookaround, backreferences, numeric capture replacements, and
@@ -173,12 +174,14 @@ engine bundle from its ZIP without manually selecting DLLs.
 ```powershell
 py -3 scripts/install_local_engine.py --archive "C:\\Downloads\\ezTrans XP.zip"
 cargo build --release --target i686-pc-windows-msvc
-.\\target\\i686-pc-windows-msvc\\release\\syousetu-translate.exe file --input original.txt --out translated.txt
+.\\target\\i686-pc-windows-msvc\\release\\syousetu-translate.exe file --input original.txt --out translated.txt --engine eztrans
 ```
 
-The installer extracts `J2KEngine.dll` / `J2KEngineH.dll`, relevant
-support DLLs, `Dat/`, and optional `Ehnd/` into the Git-ignored `engine/`
-folder. It never overwrites an existing destination. For portable deployment,
+The installer extracts `J2KEngine.dll` / `J2KEngineH.dll`, the required root
+`J2KEngine.dlx` dependency, relevant support DLLs, `Dat/`, and optional `Ehnd/`
+into the Git-ignored `engine/` folder. Archives missing the root dependency
+are rejected before extraction; `translator/J2KEngine.dll` is not substituted
+for it. It never overwrites an existing destination. For portable deployment,
 copy your own `engine/` beside the 32-bit executable. By default the program
 searches `engine/` beside the executable and in the current working directory.
 Use `--eztrans-dir PATH` or `SYOUSETU_EZTRANS_DIR` to override that location.
