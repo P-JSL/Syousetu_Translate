@@ -1,7 +1,7 @@
 # 웹소설 번역기 0.3 (Windows x64)
 
 일본어→한국어를 직접 번역하는 Rust 내부 오프라인 모델을 사용합니다.
-Java·Python·GPU·ezTrans XP 설치가 필요하지 않습니다.
+Windows 10/11 x64에서 실행하며 Java·Python·GPU·ezTrans XP 설치가 필요하지 않습니다.
 
 ## 실행
 
