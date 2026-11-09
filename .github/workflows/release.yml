@@ -16,6 +16,10 @@ on:
         description: Successful Rust CI run for the exact source commit
         required: true
         type: string
+      package_run_id:
+        description: Successful web staging run (portable-smoke only)
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -64,6 +68,14 @@ jobs:
         run: cargo run --locked --release --manifest-path tools/release_package/Cargo.toml -- package-web build/web-client release-artifact.json dist/release "$RELEASE_TAG" "$SOURCE_SHA" "$CI_RUN_ID" build/model-cache
       - name: Upload portable ZIP and checksums to the verified draft
         run: gh release upload "$RELEASE_TAG" dist/release/*.zip dist/release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Share the identical candidate with read-only Windows validation
+        uses: actions/upload-artifact@v6
+        with:
+          name: SyousetuTranslate-Portable-${{ inputs.tag }}
+          path: dist/release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
   model:
     if: inputs.kind == 'model'
@@ -129,6 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.tag }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -145,12 +158,19 @@ jobs:
           path: expected-client
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download the staged portable ZIP and checksum
-        run: gh release download "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --pattern '*.zip' --pattern SHA256SUMS.txt --dir staged-release
+      - name: Download the identical staged ZIP with read-only Actions access
+        uses: actions/download-artifact@v7
+        with:
+          name: SyousetuTranslate-Portable-${{ inputs.tag }}
+          path: staged-release
+          run-id: ${{ inputs.package_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify and unpack the exact portable release (Rust, archive dependencies only)
         run: |
           $archive = Get-ChildItem staged-release/*.zip
           if (@($archive).Count -ne 1) { throw 'Expected exactly one portable archive' }
-          cargo run --locked --release --no-default-features --manifest-path tools/release_package/Cargo.toml -- verify-portable $archive.FullName staged-release/SHA256SUMS.txt unpacked-release expected-client "$env:GITHUB_SHA"
+          $source = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve checked-out release source' }
+          cargo run --locked --release --no-default-features --manifest-path tools/release_package/Cargo.toml -- verify-portable $archive.FullName staged-release/SHA256SUMS.txt unpacked-release expected-client "$source"
       - name: Run Japanese to Korean with the bundled model from another folder
         run: ./release-audit.exe portable-existing unpacked-release portable-work

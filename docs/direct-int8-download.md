@@ -56,6 +56,9 @@ The `portable-smoke` job tests the staged release ZIP itself: CRC, SHA-256,
 the exact CI executables and all four model assets, followed by automatic
 model selection and offline inference. Its verifier builds archive dependencies
 only, without the HTTP, GUI or inference libraries.
+The staging run shares the identical ZIP through a one-day Actions artifact;
+pass its run ID as `package_run_id`. Windows keeps read-only repository/Actions
+permissions because unpublished draft release assets require writer access.
 
 The separate Rust `tools/release_package` executable streams model files into
 the portable ZIP with Deflate and checks CRC/file count/source/provenance.
