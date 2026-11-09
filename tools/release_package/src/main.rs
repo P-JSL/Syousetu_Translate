@@ -22,7 +22,13 @@ fn root() -> PathBuf {
         .expect("repository root")
 }
 fn command(exe: &str, args: &[&str]) -> Result<Vec<u8>> {
-    let result = Command::new(exe).args(args).current_dir(root()).output()?;
+    command_at(exe, args, &root())
+}
+fn command_at(exe: &str, args: &[&str], directory: &Path) -> Result<Vec<u8>> {
+    let result = Command::new(exe)
+        .args(args)
+        .current_dir(directory)
+        .output()?;
     anyhow::ensure!(
         result.status.success(),
         "{exe} failed: {}",
@@ -67,6 +73,31 @@ fn validate_sha(sha: &str) -> Result<()> {
     );
     Ok(())
 }
+fn fetch_tag_commit(directory: &Path, tag: &str) -> Result<String> {
+    validate_tag(tag)?;
+    // Checkout can synthesize a lightweight local tag for an annotated remote
+    // tag. Fetch into FETCH_HEAD so validation never replaces either tag.
+    command_at(
+        "git",
+        &[
+            "fetch",
+            "--no-tags",
+            "--depth=1",
+            "origin",
+            &format!("refs/tags/{tag}"),
+        ],
+        directory,
+    )?;
+    let sha = String::from_utf8(command_at(
+        "git",
+        &["rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+        directory,
+    )?)?
+    .trim()
+    .to_owned();
+    validate_sha(&sha)?;
+    Ok(sha)
+}
 fn stage(tag: &str, run: &str) -> Result<()> {
     validate_tag(tag)?;
     anyhow::ensure!(
@@ -75,24 +106,7 @@ fn stage(tag: &str, run: &str) -> Result<()> {
     );
     let repo = std::env::var("GITHUB_REPOSITORY")?;
     anyhow::ensure!(repo == "P-JSL/Syousetu_Translate", "Unexpected repository");
-    command(
-        "git",
-        &[
-            "fetch",
-            "--no-tags",
-            "--depth=1",
-            "origin",
-            &format!("refs/tags/{tag}:refs/tags/{tag}"),
-        ],
-    )?;
-    let sha = String::from_utf8(git(&[
-        "rev-parse",
-        "--verify",
-        &format!("refs/tags/{tag}^{{commit}}"),
-    ])?)?
-    .trim()
-    .to_owned();
-    validate_sha(&sha)?;
+    let sha = fetch_tag_commit(&root(), tag)?;
     let ci = api(&format!("repos/{repo}/actions/runs/{run}"))?;
     anyhow::ensure!(
         ci["name"] == "Rust CI"
@@ -501,5 +515,82 @@ mod tests {
     fn zip_dates_are_deterministic_and_valid() {
         assert_eq!(timestamp(0).unwrap().year(), 1980);
         assert_eq!(timestamp(1_735_689_600).unwrap().year(), 2025);
+    }
+    #[test]
+    fn annotated_remote_tag_and_checkout_lightweight_tag_do_not_conflict() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "syousetu-tag-fetch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        let remote = dir.join("remote");
+        let checkout = dir.join("checkout");
+        fs::create_dir_all(&remote)?;
+        fs::create_dir_all(&checkout)?;
+        command_at("git", &["init"], &remote)?;
+        command_at(
+            "git",
+            &[
+                "-c",
+                "user.name=Release test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "source",
+            ],
+            &remote,
+        )?;
+        command_at(
+            "git",
+            &[
+                "-c",
+                "user.name=Release test",
+                "-c",
+                "user.email=test@example.invalid",
+                "tag",
+                "-a",
+                "v0.3.1",
+                "-m",
+                "annotated",
+            ],
+            &remote,
+        )?;
+        let expected = command_at("git", &["rev-parse", "HEAD"], &remote)?;
+        command_at("git", &["init"], &checkout)?;
+        command_at(
+            "git",
+            &[
+                "remote",
+                "add",
+                "origin",
+                remote.to_str().context("Test path invalid")?,
+            ],
+            &checkout,
+        )?;
+        command_at(
+            "git",
+            &["fetch", "--no-tags", "--depth=1", "origin", "HEAD"],
+            &checkout,
+        )?;
+        command_at("git", &["tag", "v0.3.1", "FETCH_HEAD"], &checkout)?;
+        let before = command_at("git", &["rev-parse", "refs/tags/v0.3.1"], &checkout)?;
+        assert_eq!(
+            fetch_tag_commit(&checkout, "v0.3.1")?,
+            String::from_utf8(expected)?.trim()
+        );
+        assert_eq!(
+            command_at("git", &["rev-parse", "refs/tags/v0.3.1"], &checkout)?,
+            before
+        );
+        assert_eq!(
+            command_at("git", &["cat-file", "-t", "refs/tags/v0.3.1"], &remote)?,
+            b"tag\n"
+        );
+        fs::remove_dir_all(dir)?;
+        Ok(())
     }
 }
