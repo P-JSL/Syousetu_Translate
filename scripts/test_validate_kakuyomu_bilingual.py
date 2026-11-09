@@ -28,6 +28,14 @@ class BilingualValidationTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 validate(self.root, self.output, 2)
 
+    def test_windows_crlf_is_valid_and_preserves_the_actual_file_hash(self):
+        import hashlib
+        data = self.complete.replace("\n", "\r\n").encode("utf-8")
+        self.output.write_bytes(data)
+        result = validate(self.root, self.output, 2)
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["sha256"], hashlib.sha256(data).hexdigest())
+
     def test_modified_source_and_missing_translation_are_rejected(self):
         for old, new in [("本文2\n본문2", "本文CHANGED\n본문2"), ("本文1\n본문1", "本文1\n"), ("漢字\n한자", "")]:
             self.output.write_text(self.complete.replace(old, new), encoding="utf-8")

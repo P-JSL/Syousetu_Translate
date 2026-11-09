@@ -81,7 +81,9 @@ def episode(html):
 
 def validate(source_dir, output, chapters):
     data = output.read_bytes()
-    text = data.decode("utf-8")
+    # Keep the checksum over the real file bytes, while accepting Windows CRLF
+    # and Rust's LF output equally during the structural comparison.
+    text = data.decode("utf-8").replace("\r\n", "\n")
     markers = list(re.finditer(r"^\[(\d+)/(\d+)\] (.*)$", text, re.M))
     assert [int(m[1]) for m in markers] == list(range(1, chapters + 1)), "Missing, duplicate, or reordered chapters"
     assert all(int(m[2]) == chapters for m in markers), "Incorrect total chapter count"
