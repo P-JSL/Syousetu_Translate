@@ -1,3 +1,13 @@
+# 0.2 offline engine update
+
+The default GUI/CLI now uses direct Japanese→Korean SMaLL-100 inference in
+Rust/Candle on 64-bit systems, with local user-correction memory. The proprietary
+engine has not been reconstructed. The earlier original-DLL and glossary findings
+below describe the legacy compatibility work. See [offline-engine.md](offline-engine.md)
+for the current engine, CPU budget, ordered merge, validation and quality limits.
+
+---
+
 # translator7 web-client port
 
 ## Requested scope

@@ -13,15 +13,16 @@ const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 const WORKER_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum Session {
     Local {
-        pipeline: Pipeline,
+        pipeline: Option<Pipeline>,
         engine: Box<dyn Translator>,
     },
     Pool(Vec<Worker>),
 }
 impl Session {
     pub fn local(pipeline: Pipeline, engine: Box<dyn Translator>) -> Self {
-        Self::Local { pipeline, engine }
+        Self::Local { pipeline: Some(pipeline), engine }
     }
+    pub fn direct(engine: Box<dyn Translator>) -> Self {Self::Local {pipeline: None, engine}}
     pub fn parallel(args: &[String], count: usize) -> Result<Self> {
         let mut workers = Vec::new();
         for _ in 0..count.clamp(1, 16) {
@@ -31,7 +32,10 @@ impl Session {
     }
     pub fn translate(&mut self, text: &str) -> Result<String> {
         match self {
-            Self::Local { pipeline, engine } => pipeline.translate(&mut **engine, text),
+            Self::Local { pipeline, engine } => match pipeline {
+                Some(pipeline) => pipeline.translate(&mut **engine, text),
+                None => engine.translate(text),
+            },
             Self::Pool(workers) => {
                 workers[0].send(text)?;
                 workers[0].translation()
@@ -40,10 +44,10 @@ impl Session {
     }
     pub fn translate_lines(&mut self, lines: &[String]) -> Result<Vec<String>> {
         match self {
-            Self::Local { pipeline, engine } => lines
-                .iter()
-                .map(|text| pipeline.translate(&mut **engine, text))
-                .collect(),
+            Self::Local { pipeline, engine } => match pipeline {
+                Some(pipeline) => lines.iter().map(|text|pipeline.translate(&mut **engine,text)).collect(),
+                None => engine.translate_lines(lines),
+            },
             Self::Pool(workers) => {
                 let mut result = Vec::with_capacity(lines.len());
                 for chunk in lines.chunks(workers.len()) {
@@ -116,7 +120,7 @@ impl Worker {
                 }
             }
         });
-        let worker = Self {
+        let mut worker = Self {
             process,
             input,
             responses,
@@ -141,13 +145,18 @@ impl Worker {
         writeln!(self.input, "{message}").context("worker 입력 실패")?;
         self.input.flush().context("worker 입력 전송 실패")
     }
-    fn receive(&self) -> Result<Value> {
-        self.responses
-            .recv_timeout(WORKER_TIMEOUT)
-            .context("번역 worker 응답이 중단되었거나 30초 제한을 초과했습니다")?
-            .map_err(anyhow::Error::msg)
+    fn receive(&mut self) -> Result<Value> {
+        match self.responses.recv_timeout(WORKER_TIMEOUT) {
+            Ok(response) => response.map_err(anyhow::Error::msg),
+            Err(mpsc::RecvTimeoutError::Timeout) => bail!("번역 worker 응답 대기 시간이 30초를 초과했습니다"),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let status = self.process.try_wait()?.map(|s| s.to_string())
+                    .unwrap_or_else(|| "출력 연결 종료 (종료 코드 미확인)".into());
+                bail!("번역 worker가 응답 전에 종료되었습니다: {status}. 바로 앞의 엔진 초기화 오류를 확인해 주세요");
+            }
+        }
     }
-    fn translation(&self) -> Result<String> {
+    fn translation(&mut self) -> Result<String> {
         let response = self.receive()?;
         if let Some(error) = response.get("error").and_then(Value::as_str) {
             bail!("worker 번역 실패: {error}");
@@ -165,8 +174,16 @@ impl Drop for Worker {
         let _ = self.process.wait();
     }
 }
-pub fn serve(mut session: Session) -> Result<()> {
+pub fn serve(session: Result<Session>) -> Result<()> {
     let mut output = BufWriter::new(std::io::stdout().lock());
+    let mut session = match session {
+        Ok(session) => session,
+        Err(error) => {
+            writeln!(output, "{}", serde_json::json!({"ready":false,"error":format!("{error:#}")}))?;
+            output.flush()?;
+            return Err(error);
+        }
+    };
     writeln!(output, "{{\"ready\":true}}")?;
     output.flush()?;
     let mut input = BufReader::new(std::io::stdin().lock());

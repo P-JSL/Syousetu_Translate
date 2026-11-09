@@ -1,8 +1,23 @@
 # Syousetu Translate — Rust migration
 
-**Development status: Rust CLI and desktop web-novel client using the original ezTrans engine on Windows x86.**
+**v0.2: Rust desktop/CLI with direct offline Japanese→Korean neural translation. Windows x64 and Linux x64.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
+
+The default `internal` engine runs the public **SMaLL-100** model directly from
+Japanese to Korean in Rust/Candle. No English pivot, proprietary DLL, Python,
+GPU, or translation API is required. Preparation downloads approximately **1.34GB**
+of pinned, SHA-256-verified model assets once. Inference then runs offline;
+opening a live novel URL still requires access to that website. Weights are
+converted locally to Q8_0 and shared between workers. Use a 64-bit system;
+8GB RAM is recommended for initial loading/conversion.
+
+User-approved sentence corrections and source-qualified terminology edits are
+saved in a small local translation memory. This is lightweight adaptation,
+not model-weight fine-tuning. Generated translations are never automatically
+accepted as training data. See [offline engine and validation](docs/offline-engine.md)
+and [third-party notices](THIRD_PARTY_NOTICES.md). This small public model can
+mistranslate fiction, names and slang; it does not reproduce ezTrans output.
 
 Both user-provided ZIPs were downloaded and checked against their SHA-256
 records on 2026-11-03. Their client differences, Rust module mapping, and
@@ -27,23 +42,25 @@ cargo build --locked --features gui --bins
 
 Keep `syousetu-gui` and `syousetu-translate` in the same directory (on Windows,
 both use `.exe`). On Windows, launch **`웹소설 번역기.bat`**. The GUI defaults
-to the real `eztrans` backend when no settings file exists. Output selection,
+to `internal`. Old GUI `native`/`eztrans` settings switch to the internal engine
+in memory; existing settings files change only when saved. Output selection,
 chapter ranges, settings save/load,
 queue reordering, per-task settings snapshots, errors and progress are supported.
 Linux needs a graphical desktop and the X11/Wayland/OpenGL development packages
 listed in CI. A Korean system font is loaded automatically; `SYOUSETU_FONT`
 can select a local font. The CLI does not require the `gui` feature or a display.
 
-Java/JRE/JavaFX and the complete ezTrans XP application are not needed by the
-Rust client. Keep your existing working ezTrans installation and select its
-folder in Settings, or create the private `engine/` bundle described below.
-The translation DLL and its own data/dependencies are still required; replacing
-that translation engine is outside this web-client port.
+Java/JRE/JavaFX and ezTrans XP are not needed for the default internal engine.
+In the GUI, choose **모델 준비 / 복구** once, then enter the work URL and run
+translation. Use **교정 기억** to save, edit or delete corrections.
 
-The `SyousetuTranslate-Web-Windows-x86` CI artifact contains a flat web-client
-package with both executables, the BAT launcher and a [Windows usage guide](docs/windows-web-client.md).
+The `SyousetuTranslate-Web-Windows-x64` CI artifact contains both executables,
+the BAT launcher, notices and a [Windows usage guide](docs/windows-web-client.md).
 
-On Windows, build the **i686-pc-windows-msvc** target if you are using a 32-bit original ezTrans engine. GitHub Actions checks Linux x64 and Windows x86 on commits.
+GitHub Actions checks Linux x64 and Windows x64. The old CLI-only DLL adapter
+requires a separate i686 build with `--no-default-features`; it is a legacy
+compatibility path. The exported compatibility DLL remains the limited glossary
+implementation, not the neural engine. Sections below describe that legacy scope.
 
 ## Verified legacy binary file readers (not a full engine)
 

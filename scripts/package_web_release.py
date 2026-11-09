@@ -12,15 +12,16 @@ import tomllib
 import zipfile
 
 EXPECTED = {"syousetu-gui.exe", "syousetu-translate.exe", "웹소설 번역기.bat", "README.md"}
+NOTICES = {"THIRD_PARTY_NOTICES.md", "licenses/Apache-2.0.txt", "licenses/MIT-SMaLL100.txt", "licenses/MIT-gacha-pickup-calculator.txt"}
 
 
-def inspect_pe(data: bytes, subsystem: int) -> list[str]:
+def inspect_pe(data: bytes, subsystem: int, arch: str = "x86") -> list[str]:
     assert data[:2] == b"MZ", "Not an executable"
     pe = struct.unpack_from("<I", data, 0x3C)[0]
     assert data[pe:pe + 4] == b"PE\0\0", "Not a PE image"
-    assert struct.unpack_from("<H", data, pe + 4)[0] == 0x14C, "Expected Windows x86"
+    assert struct.unpack_from("<H", data, pe + 4)[0] == (0x8664 if arch == "x64" else 0x14C), f"Expected Windows {arch}"
     opt = pe + 24
-    assert struct.unpack_from("<H", data, opt)[0] == 0x10B, "Expected PE32"
+    assert struct.unpack_from("<H", data, opt)[0] == (0x20B if arch == "x64" else 0x10B), "Unexpected PE kind"
     assert struct.unpack_from("<H", data, opt + 68)[0] == subsystem, "Unexpected subsystem"
     count = struct.unpack_from("<H", data, pe + 6)[0]
     start = opt + struct.unpack_from("<H", data, pe + 20)[0]
@@ -36,7 +37,7 @@ def inspect_pe(data: bytes, subsystem: int) -> list[str]:
         raise ValueError(f"Unmapped RVA: {rva:x}")
 
     imports = []
-    rva = struct.unpack_from("<I", data, opt + 104)[0]
+    rva = struct.unpack_from("<I", data, opt + (120 if arch == "x64" else 104))[0]
     if rva:
         at = offset(rva)
         for _ in range(256):
@@ -73,28 +74,32 @@ def main():
     manifest = tomllib.loads(source("Cargo.toml").decode())
     assert manifest["package"]["version"] == args.version[1:], "Tag/package version mismatch"
     metadata = json.loads(args.metadata.read_text())
-    assert metadata["name"] == "SyousetuTranslate-Web-Windows-x86"
+    assert metadata["name"] in ["SyousetuTranslate-Web-Windows-x86", "SyousetuTranslate-Web-Windows-x64"]
+    arch = metadata["name"].rsplit("-", 1)[1]
+    expected = EXPECTED | (NOTICES if arch == "x64" else set())
     assert metadata["workflow_run"]["id"] == args.run_id
     assert metadata["workflow_run"]["head_sha"] == args.source_commit
     assert not metadata["expired"]
-    assert {p.name for p in args.artifact_dir.iterdir()} == EXPECTED, "Unexpected artifact contents"
+    assert {p.relative_to(args.artifact_dir).as_posix() for p in args.artifact_dir.rglob("*") if p.is_file()} == expected, "Unexpected artifact contents"
     payloads = {}
-    for name in EXPECTED:
+    for name in expected:
         path = args.artifact_dir / name
         assert path.is_file() and not path.is_symlink(), name
         payloads[name] = path.read_bytes()
+        if name in NOTICES:
+            assert payloads[name].decode("utf-8").replace("\r\n", "\n") == source(name).decode("utf-8").replace("\r\n", "\n"), f"Source notice mismatch: {name}"
     for name, original in [("README.md", "docs/windows-web-client.md"), ("웹소설 번역기.bat", "웹소설 번역기.bat")]:
         assert payloads[name].decode("utf-8").replace("\r\n", "\n") == source(original).decode("utf-8").replace("\r\n", "\n"), name
 
     imports = []
     for name, subsystem in [("syousetu-gui.exe", 2), ("syousetu-translate.exe", 3)]:
-        imports.extend(inspect_pe(payloads[name], subsystem))
+        imports.extend(inspect_pe(payloads[name], subsystem, arch))
     if "vcruntime140.dll" in {name.lower() for name in imports}:
-        appendix = "\n\n## Windows 실행 런타임\n\n이 빌드는 Microsoft Visual C++ v14 x86 런타임을 사용합니다.\nVCRUNTIME140.dll 관련 오류가 표시되면 Microsoft 공식 안내에서 x86 런타임을 설치해 주세요.\nhttps://learn.microsoft.com/cpp/windows/latest-supported-vc-redist\n"
+        appendix = f"\n\n## Windows 실행 런타임\n\n이 빌드는 Microsoft Visual C++ v14 {arch} 런타임을 사용합니다.\nVCRUNTIME140.dll 관련 오류가 표시되면 Microsoft 공식 안내에서 {arch} 런타임을 설치해 주세요.\nhttps://learn.microsoft.com/cpp/windows/latest-supported-vc-redist\n"
         payloads["README.md"] = payloads["README.md"].decode("utf-8").replace("\r\n", "\n").encode("utf-8") + appendix.encode("utf-8")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    package = args.output_dir / f"SyousetuTranslate-Web-{args.version}-Windows-x86.zip"
+    package = args.output_dir / f"SyousetuTranslate-Web-{args.version}-Windows-{arch}.zip"
     timestamp = int(subprocess.check_output(["git", "-C", str(repo), "show", "-s", "--format=%ct", args.source_commit]))
     date = tuple(time.gmtime(max(timestamp, 315532800))[:6])
     with zipfile.ZipFile(package, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
@@ -104,7 +109,7 @@ def main():
             info.external_attr = (0o100755 if name.endswith((".exe", ".bat")) else 0o100644) << 16
             archive.writestr(info, payloads[name], compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
     with zipfile.ZipFile(package) as archive:
-        assert set(archive.namelist()) == EXPECTED
+        assert set(archive.namelist()) == expected
         assert archive.testzip() is None
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     (args.output_dir / "SHA256SUMS.txt").write_text(f"{digest}  {package.name}\n", encoding="ascii")

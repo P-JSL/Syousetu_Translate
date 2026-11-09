@@ -60,16 +60,17 @@ jobs:
           release = releases[0]
           assert release['draft'], 'Only unpublished draft assets may be replaced'
           artifacts = api(f'actions/runs/{run_id}/artifacts')['artifacts']
-          matches = [a for a in artifacts if a['name'] == 'SyousetuTranslate-Web-Windows-x86' and not a['expired']]
+          matches = [a for a in artifacts if a['name'] in ['SyousetuTranslate-Web-Windows-x86', 'SyousetuTranslate-Web-Windows-x64'] and not a['expired']]
           assert len(matches) == 1
           assert matches[0]['workflow_run']['head_sha'] == source
           Path('release-artifact.json').write_text(json.dumps(matches[0]))
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'source_sha={source}\n')
+              output.write(f'artifact_name={matches[0]["name"]}\n')
           PY
       - uses: actions/download-artifact@v4
         with:
-          name: SyousetuTranslate-Web-Windows-x86
+          name: ${{ steps.verify.outputs.artifact_name }}
           path: build/web-client
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

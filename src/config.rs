@@ -19,6 +19,10 @@ pub struct Config {
     pub comment_separator: String,
     pub translator_name: String,
     pub eztrans_path: Option<String>,
+    pub model_dir: Option<String>,
+    pub learning_path: Option<String>,
+    pub learning_enabled: bool,
+    pub parallel_mode: String,
     pub user_agent: String,
     pub max_title_length: usize,
     pub save_without_file_chooser: bool,
@@ -37,8 +41,12 @@ impl Default for Config {
             include_furigana: false,
             include_comment: false,
             comment_separator: "\n--------------------\n".into(),
-            translator_name: "native".into(),
+            translator_name: "internal".into(),
             eztrans_path: None,
+            model_dir: None,
+            learning_path: None,
+            learning_enabled: true,
+            parallel_mode: "auto".into(),
             user_agent: "SyousetuTranslateRust/0.1 (personal web novel reader)".into(),
             max_title_length: 25,
             save_without_file_chooser: false,
@@ -46,6 +54,12 @@ impl Default for Config {
     }
 }
 impl Config {
+    pub fn model_directory(&self) -> std::path::PathBuf {
+        self.model_dir.as_ref().map(std::path::PathBuf::from).unwrap_or_else(crate::models::default_dir)
+    }
+    pub fn memory_file(&self) -> std::path::PathBuf {
+        self.learning_path.as_ref().map(std::path::PathBuf::from).unwrap_or_else(crate::learning::default_path)
+    }
     pub fn load(path: &Path) -> Result<Self> {
         let bytes =
             fs::read(path).with_context(|| format!("설정 파일 읽기 실패: {}", path.display()))?;
@@ -95,6 +109,13 @@ impl Config {
                 "include_furigana" => cfg.include_furigana = boolean()?,
                 "include_comment" => cfg.include_comment = boolean()?,
                 "save_without_file_chooser" => cfg.save_without_file_chooser = boolean()?,
+                "learning_enabled" => cfg.learning_enabled = boolean()?,
+                "model_dir" => cfg.model_dir = (!value.is_empty()).then_some(value),
+                "learning_path" => cfg.learning_path = (!value.is_empty()).then_some(value),
+                "parallel_mode" => {
+                    if !matches!(value.as_str(),"auto"|"serial"|"parallel"){bail!("parallel_mode: auto|serial|parallel이어야 합니다");}
+                    cfg.parallel_mode=value;
+                },
                 "title_format" => cfg.title_format = value,
                 "page_number_format" => {
                     cfg.page_number_format = if value.is_empty() { "#".into() } else { value }
@@ -124,7 +145,7 @@ impl Config {
                 "translator_name" => {
                     cfg.translator_name = match value.as_str() {
                         "dummy" | "passthrough" => "passthrough".into(),
-                        "native" | "eztrans" => value,
+                        "native" | "eztrans" | "internal" => value,
                         _ => bail!("지원하지 않는 translator_name: {value}"),
                     }
                 }
@@ -191,6 +212,10 @@ impl Config {
             ("include_comment", self.include_comment.to_string()),
             ("comment_separator", self.comment_separator.clone()),
             ("translator_name", self.translator_name.clone()),
+            ("model_dir", self.model_dir.clone().unwrap_or_default()),
+            ("learning_path", self.learning_path.clone().unwrap_or_default()),
+            ("learning_enabled", self.learning_enabled.to_string()),
+            ("parallel_mode", self.parallel_mode.clone()),
             (
                 "eztrans_path",
                 self.eztrans_path.clone().unwrap_or_default(),

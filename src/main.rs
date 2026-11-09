@@ -34,13 +34,30 @@ fn flag(args:&[String],key:&str)->bool{args.iter().any(|x|x==key)}
 fn num(args:&[String],key:&str,default:usize)->Result<usize>{
     value(args,key).map(|v|v.parse::<usize>().context(format!("잘못된 숫자: {key}"))).unwrap_or(Ok(default))
 }
+fn internal_mode(args:&[String],config:&Config)->bool {
+    !flag(args,"--passthrough") && value(args,"--eztrans-dir").is_none()
+        && value(args,"--engine").as_deref().unwrap_or(&config.translator_name)=="internal"
+}
 fn engine_from_args(args:&[String],config:&Config)->Result<Box<dyn engine::Translator>>{
+    if internal_mode(args,config) {
+        for option in ["--dictionary","--native-dictionary","--native-strict","--ehnd-dir","--ehnd-regex-experimental","--ehnd-literal-only","--ehnd-regex-strict"] {
+            if flag(args,option) {bail!("{option}은 내부 신경망 엔진에서 지원하지 않습니다. 교정 기억의 문장·용어 기능을 사용해 주세요");}
+        }
+        #[cfg(feature="offline-model")] {
+            let memory=if config.learning_enabled {syousetu_translate::learning::Memory::load(&config.memory_file())?}
+                else {syousetu_translate::learning::Memory::default()};
+            return Ok(Box::new(Internal {engine:syousetu_translate::offline::OfflineTranslator::open_with_policy(
+                &config.model_directory(),memory,config.workers(),config.parallel_mode.parse()?)?,progress:flag(args,"--progress-json")}));
+        }
+        #[cfg(not(feature="offline-model"))]
+        bail!("이 실행 파일에는 내부 모델 기능이 없습니다. 64비트 기본 빌드를 사용해 주세요");
+    }
     let dll_path=value(args,"--eztrans-dir").or_else(||config.eztrans_path.clone()).map(PathBuf::from);
     let engine=match value(args,"--engine").as_deref() {
         Some("native")=>EngineMode::Native,
         Some("eztrans")=>EngineMode::EzTrans,
         Some("passthrough")=>EngineMode::Passthrough,
-        Some(name)=>bail!("잘못된 --engine: {name}; native|eztrans|passthrough"),
+        Some(name)=>bail!("잘못된 --engine: {name}; internal|native|eztrans|passthrough"),
         None if flag(args,"--passthrough")=>EngineMode::Passthrough,
         None if value(args,"--eztrans-dir").is_some()=>EngineMode::EzTrans,
         None=>match config.translator_name.as_str(){"eztrans"=>EngineMode::EzTrans,"passthrough"=>EngineMode::Passthrough,_=>EngineMode::Native},
@@ -92,8 +109,26 @@ fn pipeline_from_args(args:&[String],config:&Config)->Result<Pipeline>{
     let legacy=value(args,"--engine").as_deref()==Some("eztrans")||(value(args,"--engine").is_none()&&!flag(args,"--passthrough")&&(value(args,"--eztrans-dir").is_some()||config.translator_name=="eztrans"));
     Ok(if legacy{Pipeline::legacy(dict)}else{Pipeline::new(dict)})
 }
-fn local_session(args:&[String],config:&Config)->Result<Session>{Ok(Session::local(pipeline_from_args(args,config)?,engine_from_args(args,config)?))}
-fn translation_session(args:&[String],config:&Config)->Result<Session>{if config.workers()>1{Session::parallel(args,config.workers())}else{local_session(args,config)}}
+#[cfg(feature="offline-model")]
+struct Internal {engine:syousetu_translate::offline::OfflineTranslator,progress:bool}
+#[cfg(feature="offline-model")]
+impl engine::Translator for Internal {
+    fn translate(&mut self,text:&str)->Result<String>{self.engine.translate(text)}
+    fn translate_lines(&mut self,lines:&[String])->Result<Vec<String>>{
+        let progress=self.progress;
+        self.engine.translate_lines_with_progress(lines,|done,total| {
+            if progress {eprintln!("{}",serde_json::json!({"event":"progress","done":done,"total":total,"unit":"lines"}));}
+        })
+    }
+}
+fn local_session(args:&[String],config:&Config)->Result<Session>{
+    if internal_mode(args,config){Ok(Session::direct(engine_from_args(args,config)?))}
+    else{Ok(Session::local(pipeline_from_args(args,config)?,engine_from_args(args,config)?))}
+}
+fn translation_session(args:&[String],config:&Config)->Result<Session>{
+    if internal_mode(args,config)||config.workers()==1{local_session(args,config)}
+    else{Session::parallel(args,config.workers())}
+}
 fn require(args:&[String],key:&str)->Result<String>{value(args,key).context(format!("필수 옵션 {key} 누락"))}
 fn fetcher_for(args:&[String],config:&Config)->Result<Fetcher>{
     let(site,_)=canonicalize(&require(args,"--url")?)?;
@@ -129,6 +164,9 @@ fn download(args:&[String])->Result<()> {
     let config=options::settings(args)?;
     let fetcher=fetcher_for(args,&config)?;
     let work=load_work(args,&fetcher)?;
+    if let Some(directory)=value(args,"--cache-html-dir") {
+        output::atomic_write(&Path::new(&directory).join("work.json"),&serde_json::to_string_pretty(&work)?)?;
+    }
     let first=num(args,"--start",1)?;
     if first==0 || first>work.episodes.len(){bail!("--start가 작품 화수 범위를 벗어났습니다");}
     let end=num(args,"--end",work.episodes.len())?.min(work.episodes.len());
@@ -143,6 +181,9 @@ fn download(args:&[String])->Result<()> {
             .map(|dir|Path::new(&dir).join(format!("{i}.html")));
         let page=match file {Some(file)=>fs::read_to_string(&file).with_context(||format!("에피소드 HTML 없음: {}",file.display()))?,
             None=>{if !flag(args,"--no-delay"){fetcher.rest();}fetcher.get(&work.episodes[i-1])?}};
+        if let Some(directory)=value(args,"--cache-html-dir") {
+            output::atomic_write(&Path::new(&directory).join(format!("{i}.html")),&page)?;
+        }
         let episode=parse_episode_with_comments(work.site,&page,config.include_furigana,config.include_comment,&config.comment_separator)
             .with_context(||format!("에피소드 {i} 파싱 실패: {}",work.episodes[i-1]))?;
         out.push_str(&output::format_episode(&mut session,&episode,i,end,&config)?);
@@ -185,6 +226,7 @@ fn translate_file(input:&Path,output:&Path,config:&Config,session:&mut Session,a
         translated.extend(session.translate_lines(chunk)?);
         emit_progress(args,translated.len(),raw_lines.len(),"lines");
     }
+    anyhow::ensure!(lines.len()==translated.len(),"파일 원문·번역 줄 수가 다릅니다. 불완전한 결과는 저장하지 않습니다");
     for(line,translation)in lines.into_iter().zip(translated){
         let raw=line.trim_end_matches('\n').trim_end_matches('\r');
         if config.print_japanese{out.push_str(raw);out.push('\n');}
@@ -203,6 +245,42 @@ fn write_config(args:&[String])->Result<()> {
     output::atomic_write(Path::new(&require(args,"--out")?),&text)?;
     Ok(())
 }
+fn model_command(args:&[String])->Result<()> {
+    let cfg=options::settings(args)?;
+    let dir=cfg.model_directory();
+    if flag(args,"--prepare")&&flag(args,"--verify"){bail!("--prepare와 --verify는 함께 사용할 수 없습니다");}
+    if flag(args,"--prepare") {
+        let mut last=std::time::Instant::now()-std::time::Duration::from_secs(2);
+        syousetu_translate::models::prepare(&dir,|done,total,label|{
+            if done==total||last.elapsed()>=std::time::Duration::from_secs(1){
+                if flag(args,"--progress-json") {emit_progress(args,done as usize,total as usize,"bytes");}
+                eprintln!("모델 준비 {done}/{total}: {label}");last=std::time::Instant::now();
+            }
+        })?;
+    } else if flag(args,"--verify") {syousetu_translate::models::verify(&dir)?;}
+    println!("{}",serde_json::to_string_pretty(&syousetu_translate::models::status(&dir))?);
+    Ok(())
+}
+fn memory_command(args:&[String])->Result<()> {
+    use syousetu_translate::learning::Memory;
+    let path=options::settings(args)?.memory_file();
+    let learn=flag(args,"--learn"); let forget=flag(args,"--forget");
+    if learn&&forget{bail!("--learn과 --forget은 함께 사용할 수 없습니다");}
+    let memory=if learn||forget {
+        let source=require(args,"--source")?;
+        Memory::edit(&path,|m|{
+            if forget {
+                if let Some(previous)=value(args,"--previous") {m.terms.retain(|t|t.source!=source.trim()||t.previous!=previous.trim());}
+                else{m.sentences.remove(source.trim());}
+                Ok(())
+            }else if let Some(previous)=value(args,"--previous") {
+                m.learn_term(&source,&previous,&require(args,"--corrected")?)
+            }else{m.learn(&source,&require(args,"--corrected")?)}
+        })?
+    }else{Memory::load(&path)?};
+    println!("{}",serde_json::to_string_pretty(&memory)?);
+    Ok(())
+}
 fn help() {
     println!("{}", r#"Syousetu Translate (Rust)
   inspect --url URL [--html saved.html]
@@ -219,7 +297,11 @@ fn help() {
   inspect-config [--config config/config.properties]
   write-config --out config/config.properties [--json edited-settings.json]
 
-  Engine: --engine native|eztrans|passthrough (default: native)
+  Engine: --engine internal|native|eztrans|passthrough (default: internal)
+  models [--prepare | --verify] [--model-dir PATH]
+  translate --text JAPANESE [--model-dir PATH]
+  memory [--learn | --forget] --source JAPANESE [--corrected KOREAN] [--previous OLD_KOREAN]
+  Internal: --model-dir PATH, --memory-path PATH, --no-learning
   Native: --native-dictionary PATH [--native-strict]
   Legacy: --engine eztrans [--eztrans-dir PATH]
   Common: --config PATH, --dictionary PATH, --japanese, --no-japanese, --jobs 1..16
@@ -343,7 +425,14 @@ fn run()->Result<()> {
     if args.len()==1||args.iter().skip(1).any(|arg|arg=="--help"||arg=="-h")||args.get(1).map(String::as_str)==Some("help"){help();return Ok(());}
     options::validate(&args[1],&args[2..])?;
     match args.get(1).map(String::as_str) {
-        Some("worker")=>{let config=options::settings(&args[2..])?;session::serve(local_session(&args[2..],&config)?)},
+        Some("worker")=>session::serve(options::settings(&args[2..]).and_then(|config|local_session(&args[2..],&config))),
+        Some("models")=>model_command(&args[2..]),
+        Some("memory")=>memory_command(&args[2..]),
+        Some("translate")=>{
+            let config=options::settings(&args[2..])?;
+            println!("{}",translation_session(&args[2..],&config)?.translate(&require(&args[2..],"--text")?)?);
+            Ok(())
+        },
         Some("inspect-config")=>{println!("{}",serde_json::to_string_pretty(&options::settings(&args[2..])?)?);Ok(())},
         Some("write-config")=>write_config(&args[2..]),
         Some("inspect")=>inspect(&args[2..]),

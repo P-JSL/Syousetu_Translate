@@ -14,6 +14,7 @@ pub fn format_episode(session:&mut Session, episode:&Episode,
     });
     output.push_str(&format!("\n\n{title}\n\n"));
     let translated=session.translate_lines(&episode.lines)?;
+    anyhow::ensure!(translated.len()==episode.lines.len(),"본문 원문·번역 줄 수가 다릅니다. 불완전한 결과는 저장하지 않습니다");
     for (line,translation) in episode.lines.iter().zip(translated) {
         if config.print_japanese {output.push_str(line);output.push('\n');}
         output.push_str(&translation);output.push('\n');
@@ -43,5 +44,15 @@ pub fn suggested_filename(title:&str,config:&Config)->Result<String>{
         atomic_write(&path,"안녕\n").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(),"안녕\n");
         fs::remove_file(path).unwrap();
+    }
+    #[test] fn missing_translated_lines_are_rejected(){
+        struct Incomplete;
+        impl crate::engine::Translator for Incomplete {
+            fn translate(&mut self,_:&str)->Result<String>{Ok("제목".into())}
+            fn translate_lines(&mut self,_:&[String])->Result<Vec<String>>{Ok(vec!["한 줄만".into()])}
+        }
+        let mut session=Session::direct(Box::new(Incomplete));
+        let episode=Episode{title:"章".into(),lines:vec!["一".into(),"二".into()]};
+        assert!(format_episode(&mut session,&episode,1,1,&Config::default()).is_err());
     }
 }

@@ -17,6 +17,12 @@ pub mod ehnd_control;
 pub mod config;
 pub mod storage;
 pub mod jobs;
+pub mod models;
+pub mod learning;
+#[cfg(feature = "offline-model")]
+mod ordered;
+#[cfg(feature = "offline-model")]
+pub mod offline;
 
 use native::NativeTranslator;
 use std::{

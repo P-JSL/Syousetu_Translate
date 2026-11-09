@@ -1,0 +1,34 @@
+[
+  {
+    "model": "ja-ko",
+    "repo": "alirezamsh/small100",
+    "revision": "8ab680e26a596d2e3d2d2d17ae0f68df1037328c",
+    "file": "config.json",
+    "size": 890,
+    "sha256": "26fd3989cea6037d432c480f5181d05c088a613394d0361edc6605a6a1058715"
+  },
+  {
+    "model": "ja-ko",
+    "repo": "alirezamsh/small100",
+    "revision": "8ab680e26a596d2e3d2d2d17ae0f68df1037328c",
+    "file": "model.safetensors",
+    "size": 1330973772,
+    "sha256": "dd3b845a36ea4ed90437fd0b9b477e30c21f144d3658679fd5c945e3c96b0fbc"
+  },
+  {
+    "model": "ja-ko",
+    "repo": "alirezamsh/small100",
+    "revision": "8ab680e26a596d2e3d2d2d17ae0f68df1037328c",
+    "file": "sentencepiece.bpe.model",
+    "size": 2423393,
+    "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"
+  },
+  {
+    "model": "ja-ko",
+    "repo": "alirezamsh/small100",
+    "revision": "8ab680e26a596d2e3d2d2d17ae0f68df1037328c",
+    "file": "vocab.json",
+    "size": 3708092,
+    "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc"
+  }
+]

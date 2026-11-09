@@ -18,7 +18,7 @@ fn desktop_queue_reorders_waiting_jobs_isolates_settings_and_continues_after_fai
     fs::create_dir(directory.join("chapters")).unwrap();
     fs::write(directory.join("chapters/1.html"), episode).unwrap();
     let mut queue = Queue::new(env!("CARGO_BIN_EXE_syousetu-translate"), &directory);
-    let config = Config::default();
+    let config = Config {translator_name:"native".into(), ..Config::default()};
     let args = |input: &str, output: &str| -> Vec<OsString> {
         [
             "download",

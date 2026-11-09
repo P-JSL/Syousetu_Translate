@@ -5,6 +5,7 @@ use std::{ffi::OsString, path::PathBuf, time::Duration};
 use syousetu_translate::{
     config::Config,
     jobs::{sibling_cli, Queue, Status},
+    learning::Memory,
     storage::atomic_write,
 };
 
@@ -12,6 +13,7 @@ use syousetu_translate::{
 enum Tab {
     Novel,
     Settings,
+    Learning,
 }
 
 struct Desktop {
@@ -28,6 +30,11 @@ struct Desktop {
     end: usize,
     metadata: String,
     message: String,
+    memory: Memory,
+    source: String,
+    previous: String,
+    corrected: String,
+    term_mode: bool,
 }
 
 impl Desktop {
@@ -37,10 +44,10 @@ impl Desktop {
         let path = directory.join("config/config.properties");
         let defaults = || {
             let mut config = Config::parse("").unwrap_or_default();
-            config.translator_name = "eztrans".into();
+            config.translator_name = "internal".into();
             config
         };
-        let (config, message) = if path.is_file() {
+        let (mut config, mut message) = if path.is_file() {
             match Config::load(&path) {
                 Ok(config) => (config, String::new()),
                 Err(e) => (
@@ -50,6 +57,17 @@ impl Desktop {
             }
         } else {
             (defaults(), String::new())
+        };
+        if matches!(config.translator_name.as_str(), "eztrans" | "native") {
+            config.translator_name = "internal".into();
+            message = "내부 번역 엔진으로 전환했습니다. 최초 1회 모델을 준비해 주세요.".into();
+        }
+        let memory = match Memory::load(&config.memory_file()) {
+            Ok(memory) => memory,
+            Err(error) => {
+                message = format!("{error:#}");
+                Memory::default()
+            }
         };
         let executable = std::env::current_exe().unwrap_or_else(|_| directory.join("syousetu-gui"));
         Self {
@@ -66,6 +84,11 @@ impl Desktop {
             end: 0,
             metadata: String::new(),
             message,
+            memory,
+            source: String::new(),
+            previous: String::new(),
+            corrected: String::new(),
+            term_mode: false,
         }
     }
 
@@ -78,10 +101,19 @@ impl Desktop {
         if translation {
             if !matches!(
                 self.config.translator_name.as_str(),
-                "eztrans" | "passthrough"
+                "internal" | "passthrough"
             ) {
                 self.message =
-                    "설정에서 eztrans(번역) 또는 passthrough(원문 저장)를 선택해 주세요.".into();
+                    "설정에서 internal(내부 번역) 또는 passthrough(원문 저장)를 선택해 주세요."
+                        .into();
+                return None;
+            }
+            if self.config.translator_name == "internal"
+                && !syousetu_translate::models::status(&self.config.model_directory()).ready
+            {
+                self.message =
+                    "먼저 '모델 준비 / 복구'를 실행해 주세요. 준비 후에는 오프라인으로 번역됩니다."
+                        .into();
                 return None;
             }
             args.push("--progress-json".into());
@@ -105,6 +137,7 @@ impl Desktop {
     fn novel(&mut self, ui: &mut egui::Ui) {
         ui.heading("웹소설 다운로드 및 번역");
         ui.label("Kakuyomu · Alphapolis · Syosetu · Syosetu18 · Hameln · Novelup");
+        self.model_tools(ui);
         row(ui, "작품 URL", &mut self.url);
         if ui.button("목차 확인").clicked() {
             if self.url.trim().is_empty() {
@@ -182,7 +215,10 @@ impl Desktop {
         ui.horizontal(|ui| {
             if ui.button("불러오기").clicked() {
                 match Config::load(std::path::Path::new(&self.config_path)) {
-                    Ok(config) => {
+                    Ok(mut config) => {
+                        if matches!(config.translator_name.as_str(), "native" | "eztrans") {
+                            config.translator_name = "internal".into();
+                        }
                         self.config = config;
                         self.message = "설정을 불러왔습니다.".into();
                     }
@@ -203,25 +239,35 @@ impl Desktop {
         egui::ComboBox::from_label("번역기")
             .selected_text(&self.config.translator_name)
             .show_ui(ui, |ui| {
-                for name in ["eztrans", "passthrough"] {
+                for name in ["internal", "passthrough"] {
                     ui.selectable_value(&mut self.config.translator_name, name.into(), name);
                 }
             });
-        ui.label("eztrans: 기존 ezTrans로 번역 · passthrough: 번역 없이 원문 저장");
-        row_option(ui, "ezTrans 설치 폴더", &mut self.config.eztrans_path);
-        if ui.button("ezTrans 폴더 선택").clicked() {
-            if let Some(path) = tinyfiledialogs::select_folder_dialog(
-                "Folder containing J2KEngineH.dll and Dat",
-                ".",
-            ) {
-                self.config.eztrans_path = Some(path);
-            }
-        }
-        row(
+        ui.label("internal: Rust 내부 오프라인 번역 · passthrough: 원문 저장");
+        row_option(
             ui,
-            "사용자 사전 (비우면 config/dictionary.txt)",
-            &mut self.dictionary,
+            "모델 폴더 (비우면 사용자 데이터 폴더)",
+            &mut self.config.model_dir,
         );
+        self.model_tools(ui);
+        row_option(
+            ui,
+            "교정 기억 파일 (비우면 사용자 데이터 폴더)",
+            &mut self.config.learning_path,
+        );
+        ui.checkbox(&mut self.config.learning_enabled, "교정 기억 적용");
+        egui::ComboBox::from_label("본문 처리 방식")
+            .selected_text(&self.config.parallel_mode)
+            .show_ui(ui, |ui| {
+                for (value, label) in [
+                    ("auto", "자동 성능 확인"),
+                    ("serial", "단일"),
+                    ("parallel", "병렬"),
+                ] {
+                    ui.selectable_value(&mut self.config.parallel_mode, value.into(), label);
+                }
+            });
+        ui.label("자동: 첫 본문 묶음의 속도와 출력 일치를 확인하고 빠른 방식을 선택합니다.");
         ui.checkbox(&mut self.config.print_japanese, "일본어 동시 출력");
         ui.checkbox(&mut self.config.include_furigana, "후리가나 포함");
         ui.checkbox(&mut self.config.include_comment, "작가 코멘트 포함");
@@ -263,6 +309,132 @@ impl Desktop {
                 ui.end_row();
             });
         row(ui, "User Agent", &mut self.config.user_agent);
+    }
+
+    fn model_tools(&mut self, ui: &mut egui::Ui) {
+        let status = syousetu_translate::models::status(&self.config.model_directory());
+        ui.label(if status.ready {
+            "내부 모델 준비됨 · 번역은 오프라인".to_owned()
+        } else {
+            format!(
+                "내부 모델 준비 필요 · 최초 다운로드 약 {}MB",
+                status.download_bytes / 1_000_000
+            )
+        });
+        if ui.button("모델 준비 / 복구").clicked() {
+            self.enqueue(
+                "내부 번역 모델 준비".into(),
+                vec![
+                    "models".into(),
+                    "--prepare".into(),
+                    "--progress-json".into(),
+                ],
+                false,
+            );
+        }
+    }
+
+    fn learning(&mut self, ui: &mut egui::Ui) {
+        ui.heading("교정 기억");
+        ui.label("직접 고친 문장과 용어를 기억합니다. 모델 가중치를 재학습하지 않으며 자동 생성 결과는 학습하지 않습니다.");
+        ui.label("저장한 교정은 이후 시작하는 번역 작업에 적용됩니다.");
+        ui.checkbox(&mut self.config.learning_enabled, "교정 기억 적용");
+        row_option(ui, "교정 기억 파일", &mut self.config.learning_path);
+        ui.label(self.config.memory_file().display().to_string());
+        if ui.button("목록 새로고침").clicked() {
+            match Memory::load(&self.config.memory_file()) {
+                Ok(memory) => {
+                    self.memory = memory;
+                    self.message.clear();
+                }
+                Err(error) => self.message = format!("{error:#}"),
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.term_mode, false, "문장 교정");
+            ui.selectable_value(&mut self.term_mode, true, "용어 교정");
+        });
+        ui.label(if self.term_mode {
+            "일본어 용어 (이 원문이 포함된 경우에만 치환)"
+        } else {
+            "일본어 원문 (같은 문장에 적용)"
+        });
+        ui.text_edit_multiline(&mut self.source);
+        if self.term_mode {
+            row(ui, "기존 한국어 표현", &mut self.previous);
+        }
+        ui.label("교정한 한국어");
+        ui.text_edit_multiline(&mut self.corrected);
+        if ui.button("교정 기억 저장").clicked() {
+            let result = Memory::edit(&self.config.memory_file(), |memory| {
+                if self.term_mode {
+                    memory.learn_term(&self.source, &self.previous, &self.corrected)
+                } else {
+                    memory.learn(&self.source, &self.corrected)
+                }
+            });
+            match result {
+                Ok(memory) => {
+                    self.memory = memory;
+                    self.message = "교정을 저장했습니다.".into();
+                }
+                Err(error) => self.message = format!("{error:#}"),
+            }
+        }
+        ui.separator();
+        ui.label(format!(
+            "문장 {}개 · 용어 {}개",
+            self.memory.sentences.len(),
+            self.memory.terms.len()
+        ));
+        let mut delete = None;
+        for (source, corrected) in &self.memory.sentences {
+            ui.horizontal(|ui| {
+                if ui.small_button("수정").clicked() {
+                    self.term_mode = false;
+                    self.source = source.clone();
+                    self.corrected = corrected.clone();
+                }
+                if ui.small_button("삭제").clicked() {
+                    delete = Some((source.clone(), None));
+                }
+                ui.label(format!("{source} → {corrected}"));
+            });
+        }
+        for term in &self.memory.terms {
+            ui.horizontal(|ui| {
+                if ui.small_button("수정").clicked() {
+                    self.term_mode = true;
+                    self.source = term.source.clone();
+                    self.previous = term.previous.clone();
+                    self.corrected = term.corrected.clone();
+                }
+                if ui.small_button("삭제").clicked() {
+                    delete = Some((term.source.clone(), Some(term.previous.clone())));
+                }
+                ui.label(format!(
+                    "{}: {} → {}",
+                    term.source, term.previous, term.corrected
+                ));
+            });
+        }
+        if let Some((source, previous)) = delete {
+            match Memory::edit(&self.config.memory_file(), |m| {
+                if let Some(previous) = previous {
+                    m.terms
+                        .retain(|t| t.source != source || t.previous != previous);
+                } else {
+                    m.sentences.remove(&source);
+                }
+                Ok(())
+            }) {
+                Ok(memory) => {
+                    self.memory = memory;
+                    self.message = "교정을 삭제했습니다.".into();
+                }
+                Err(error) => self.message = format!("{error:#}"),
+            }
+        }
     }
 
     fn tasks(&mut self, ui: &mut egui::Ui) {
@@ -347,7 +519,11 @@ impl Desktop {
         }
         egui::TopBottomPanel::top("navigation").show(context, |ui| {
             ui.horizontal(|ui| {
-                for (tab, label) in [(Tab::Novel, "웹소설"), (Tab::Settings, "설정")] {
+                for (tab, label) in [
+                    (Tab::Novel, "웹소설"),
+                    (Tab::Settings, "설정"),
+                    (Tab::Learning, "교정 기억"),
+                ] {
                     ui.selectable_value(&mut self.tab, tab, label);
                 }
             });
@@ -359,6 +535,7 @@ impl Desktop {
                     match self.tab {
                         Tab::Novel => self.novel(ui),
                         Tab::Settings => self.settings(ui),
+                        Tab::Learning => self.learning(ui),
                     }
                     if !self.message.is_empty() {
                         ui.separator();
@@ -447,7 +624,7 @@ mod tests {
     fn desktop_tabs_render_without_a_display_server() {
         let context = egui::Context::default();
         let mut app = Desktop::new(&context);
-        for tab in [Tab::Novel, Tab::Settings] {
+        for tab in [Tab::Novel, Tab::Settings, Tab::Learning] {
             app.tab = tab;
             let output = context.run(egui::RawInput::default(), |context| app.draw(context));
             assert!(!output.shapes.is_empty());

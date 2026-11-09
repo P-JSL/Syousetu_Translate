@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate 32-bit PE DLL exported names without executing the DLL.
+"""Validate x86/x64 PE DLL exported names without executing the DLL.
 
 Used in Windows x86 CI so the Rust ABI is checked even when original
 commercial binaries cannot be distributed to the build agent.
@@ -29,9 +29,10 @@ def exports(path: pathlib.Path) -> set[str]:
     machine = u16(data, pe + 4)
     opt_size = u16(data, pe + 20)
     opt = pe + 24
-    if machine != 0x14C or u16(data, opt) != 0x10B:
-        raise ValueError(f"Expected i686 PE32, got machine={machine:04x}")
-    export_rva = u32(data, opt + 96)
+    magic = u16(data, opt)
+    if (machine, magic) not in [(0x14C, 0x10B), (0x8664, 0x20B)]:
+        raise ValueError(f"Expected x86/x64 PE, got machine={machine:04x}")
+    export_rva = u32(data, opt + (112 if magic == 0x20B else 96))
     section_start = opt + opt_size
     section_count = u16(data, pe + 6)
     sections = []

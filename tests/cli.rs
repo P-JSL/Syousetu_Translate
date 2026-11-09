@@ -15,6 +15,10 @@ impl Workspace {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&p).unwrap();
+        fs::create_dir(p.join("config")).unwrap();
+        // These workflow fixtures intentionally use the deterministic glossary;
+        // real neural quality/performance is validated by the opt-in model test.
+        fs::write(p.join("config/config.properties"), "translator_name=native\n").unwrap();
         Self(p)
     }
     fn write(&self, name: &str, text: impl AsRef<[u8]>) {
@@ -46,6 +50,23 @@ fn success(r: Output) -> Output {
         String::from_utf8_lossy(&r.stderr)
     );
     r
+}
+#[test]
+fn worker_reports_initialization_error_before_closing_its_channel() {
+    let w=Workspace::new();
+    let result=w.run(&["worker","--native-dictionary","missing-dictionary.tsv"]);
+    assert!(!result.status.success());
+    let response:serde_json::Value=serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(response["ready"],false);
+    assert!(response["error"].as_str().unwrap().contains("missing-dictionary.tsv"));
+    w.write("source.txt","こんにちは");w.write("existing.txt","preserved");
+    let result=w.run(&["file","--input","source.txt","--out","existing.txt","--native-dictionary","missing-dictionary.tsv","--jobs","2"]);
+    assert!(!result.status.success());
+    let error=String::from_utf8_lossy(&result.stderr);
+    assert!(error.contains("missing-dictionary.tsv"),"{error}");
+    assert!(!error.contains("channel is empty"));
+    assert!(!error.contains("30초"));
+    assert_eq!(w.read("existing.txt"),"preserved");
 }
 #[test]
 fn parallel_translation_matches_sequential_with_dictionary_and_bilingual_lines() {

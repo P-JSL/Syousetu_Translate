@@ -65,6 +65,13 @@ pub fn settings(args: &[String]) -> Result<Config> {
         }
         cfg.max_cpu_core_count = jobs as isize;
     }
+    if let Some(path) = value(args, "--model-dir") {cfg.model_dir = Some(path);}
+    if let Some(path) = value(args, "--memory-path") {cfg.learning_path = Some(path);}
+    if flag(args, "--no-learning") {cfg.learning_enabled = false;}
+    if let Some(mode)=value(args,"--parallel-mode") {
+        if !matches!(mode.as_str(),"auto"|"serial"|"parallel"){bail!("--parallel-mode: auto|serial|parallel이어야 합니다");}
+        cfg.parallel_mode=mode;
+    }
     Ok(cfg)
 }
 pub fn validate(command: &str, args: &[String]) -> Result<()> {
@@ -76,6 +83,9 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--native-dictionary",
         "--ehnd-dir",
         "--jobs",
+        "--model-dir",
+        "--memory-path",
+        "--parallel-mode",
     ];
     let common_flags = [
         "--japanese",
@@ -86,12 +96,14 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--ehnd-regex-strict",
         "--ehnd-literal-only",
         "--progress-json",
+        "--no-learning",
     ];
     let download_values = [
         "--url",
         "--out",
         "--html",
         "--episode-html-dir",
+        "--cache-html-dir",
         "--index-html-dir",
         "--start",
         "--end",
@@ -116,6 +128,15 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
     let mut values = Vec::new();
     let mut flags = Vec::new();
     match command {
+        "translate" => {values.extend(common_values); values.push("--text"); flags.extend(common_flags);}
+        "models" => {
+            values.extend(["--config", "--model-dir"]);
+            flags.extend(["--prepare", "--verify", "--progress-json"]);
+        }
+        "memory" => {
+            values.extend(["--config", "--memory-path", "--source", "--corrected", "--previous"]);
+            flags.extend(["--learn", "--forget"]);
+        }
         "download" | "file" | "worker" => {
             values.extend(common_values);
             flags.extend(common_flags);

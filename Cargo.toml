@@ -1,19 +1,24 @@
 [package]
 name = "syousetu-translate"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"
 default-run = "syousetu-translate"
 
 [features]
-default = []
-gui = ["dep:eframe", "dep:tinyfiledialogs"]
+default = ["offline-model"]
+offline-model = ["dep:candle-core", "dep:candle-nn", "dep:sentencepiece-rs", "dep:rayon"]
+gui = ["offline-model", "dep:eframe", "dep:tinyfiledialogs"]
 
 [[bin]]
 name = "syousetu-gui"
 path = "src/bin/syousetu-gui.rs"
 required-features = ["gui"]
+
+[[example]]
+name = "benchmark_offline"
+required-features = ["offline-model"]
 
 [lib]
 name = "syousetu_translate"
@@ -34,6 +39,12 @@ serde_json = "1"
 url = "2"
 eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"], optional = true }
 tinyfiledialogs = { version = "3.9", optional = true }
+sha2 = "0.10"
+candle-core = { version = "=0.11.1", optional = true }
+candle-nn = { version = "=0.11.1", optional = true }
+sentencepiece-rs = { version = "=0.2.2", optional = true }
+rayon = { version = "1.10", optional = true }
+fs2 = "0.4"
 
 [profile.release]
 lto = "thin"

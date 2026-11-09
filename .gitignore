@@ -8,3 +8,6 @@ J2KEngine*.dll
 *.exe
 *.zip
 config/dictionary.txt
+
+__pycache__/
+*.py[cod]

@@ -13,7 +13,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
           - os: windows-latest
-            target: i686-pc-windows-msvc
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,30 +29,32 @@ jobs:
       - run: cargo clippy --locked --features gui --all-targets --target ${{ matrix.target }}
       - run: cargo test --locked --features gui --all-targets --target ${{ matrix.target }}
       - run: cargo build --locked --features gui --release --target ${{ matrix.target }}
-      - name: Verify exported ABI symbol names in Windows x86 DLL
+      - name: Verify exported ABI symbol names in Windows DLL
         if: matrix.os == 'windows-latest'
-        run: python scripts/verify_pe_exports.py target/i686-pc-windows-msvc/release/syousetu_translate.dll J2K_InitializeEx J2K_TranslateMMNTW J2K_TranslateMMNT J2K_FreeMem
+        run: python scripts/verify_pe_exports.py target/x86_64-pc-windows-msvc/release/syousetu_translate.dll J2K_InitializeEx J2K_TranslateMMNTW J2K_TranslateMMNT J2K_FreeMem
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: SyousetuTranslate-Windows-x86
+          name: SyousetuTranslate-Windows-x64
           path: |
-            target/i686-pc-windows-msvc/release/syousetu-translate.exe
-            target/i686-pc-windows-msvc/release/syousetu_translate.dll
+            target/x86_64-pc-windows-msvc/release/syousetu-translate.exe
+            target/x86_64-pc-windows-msvc/release/syousetu_translate.dll
           if-no-files-found: error
       - name: Package web client
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/web-client | Out-Null
-          Copy-Item target/i686-pc-windows-msvc/release/syousetu-gui.exe dist/web-client/
-          Copy-Item target/i686-pc-windows-msvc/release/syousetu-translate.exe dist/web-client/
+          Copy-Item target/x86_64-pc-windows-msvc/release/syousetu-gui.exe dist/web-client/
+          Copy-Item target/x86_64-pc-windows-msvc/release/syousetu-translate.exe dist/web-client/
           Copy-Item '웹소설 번역기.bat' dist/web-client/
           Copy-Item docs/windows-web-client.md dist/web-client/README.md
+          Copy-Item THIRD_PARTY_NOTICES.md dist/web-client/
+          Copy-Item -Recurse licenses dist/web-client/
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: SyousetuTranslate-Web-Windows-x86
+          name: SyousetuTranslate-Web-Windows-x64
           path: dist/web-client/
           if-no-files-found: error
 
@@ -64,13 +66,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Kakuyomu work index
         continue-on-error: true
-        run: cargo run -- inspect --url https://kakuyomu.jp/works/2912051603596422650
+        run: cargo run --no-default-features -- inspect --url https://kakuyomu.jp/works/11054822663814504924
       - name: Kakuyomu chapter 1 (passthrough only)
         continue-on-error: true
-        run: cargo run -- download --url https://kakuyomu.jp/works/2912051603596422650 --out kakuyomu-first.txt --start 1 --end 1 --passthrough
+        run: cargo run --no-default-features -- download --url https://kakuyomu.jp/works/11054822663814504924 --out kakuyomu-first.txt --start 1 --end 1 --passthrough
       - name: Alphapolis work index
         continue-on-error: true
-        run: cargo run -- inspect --url https://www.alphapolis.co.jp/novel/767156331/284095783
+        run: cargo run --no-default-features -- inspect --url https://www.alphapolis.co.jp/novel/767156331/284095783
       - name: Alphapolis chapter 1 (passthrough only)
         continue-on-error: true
-        run: cargo run -- download --url https://www.alphapolis.co.jp/novel/767156331/284095783 --out alphapolis-first.txt --start 1 --end 1 --passthrough
+        run: cargo run --no-default-features -- download --url https://www.alphapolis.co.jp/novel/767156331/284095783 --out alphapolis-first.txt --start 1 --end 1 --passthrough

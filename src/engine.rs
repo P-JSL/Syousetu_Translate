@@ -7,6 +7,7 @@ use std::ffi::CString;
 
 pub trait Translator {
     fn translate(&mut self, text: &str) -> Result<String>;
+    fn translate_lines(&mut self, lines: &[String]) -> Result<Vec<String>> {lines.iter().map(|text|self.translate(text)).collect()}
 }
 pub struct Passthrough;
 impl Translator for Passthrough {
@@ -21,6 +22,7 @@ pub struct EzTrans {
 #[cfg(windows)]
 impl EzTrans {
     pub fn open(dir: &Path) -> Result<Self> {
+        if usize::BITS!=32 {bail!("기존 ezTrans DLL은 32비트 전용입니다. 내부 번역기는 --engine internal로 실행해 주세요");}
         use libloading::Library;
         let names = ["J2KEngineH.dll", "J2KEngine.dll"];
         let file = names.iter().map(|x| dir.join(x)).find(|p| p.is_file())
