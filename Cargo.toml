@@ -1,6 +1,6 @@
 [package]
 name = "syousetu-translate"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"

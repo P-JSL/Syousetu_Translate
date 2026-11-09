@@ -1,6 +1,6 @@
 # Syousetu Translate — Rust migration
 
-**v0.3.1: Bundled SMaLL-100 INT8 for immediate offline Japanese→Korean translation. Windows x64 and Linux x64.**
+**v0.3.2: Modular Rust core, faster translation and bundled compressed corrections. Windows x64 portable release; Linux x64 source builds.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 

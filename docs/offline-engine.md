@@ -1,4 +1,4 @@
-# Direct offline translation (0.3.1)
+# Direct offline translation (0.3.2)
 
 The default `internal` engine runs **SMaLL-100 INT8** directly from Japanese to Korean
 in Rust. The source-visible recovery client is retained; neither ezTrans XP's
