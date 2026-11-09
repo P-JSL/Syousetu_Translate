@@ -1,6 +1,7 @@
 # Third-party notices
 
-The application implements inference in Rust and downloads model data separately.
+The application implements inference in Rust. Portable releases include the
+prepared MIT-licensed INT8 model; a Rust downloader supports optional recovery.
 It does not redistribute ezTrans XP or its proprietary engine assets.
 
 * **SMaLL-100**, Alireza Mohammadshahi, Vassilina Nikoulina, Alexandre Berard,

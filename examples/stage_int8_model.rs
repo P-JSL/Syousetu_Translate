@@ -37,12 +37,7 @@ fn validate_release(tag: &str, run: &str) -> Result<()> {
     let jobs = gh(&format!(
         "repos/{repo}/actions/runs/{run}/jobs?per_page=100"
     ))?;
-    for required in [
-        "checks (ubuntu-latest)",
-        "checks (windows-latest)",
-        "lint",
-        "legacy",
-    ] {
+    for required in ["checks (windows-latest)", "lint", "legacy"] {
         anyhow::ensure!(
             jobs["jobs"]
                 .as_array()
@@ -52,6 +47,16 @@ fn validate_release(tag: &str, run: &str) -> Result<()> {
             "Required CI job missing: {required}"
         );
     }
+    anyhow::ensure!(
+        jobs["jobs"]
+            .as_array()
+            .context("CI jobs missing")?
+            .iter()
+            .any(|j| (j["name"] == "checks (ubuntu-24.04)"
+                || j["name"] == "checks (ubuntu-latest)")
+                && j["conclusion"] == "success"),
+        "Required Linux CI job missing"
+    );
     let reference = gh(&format!("repos/{repo}/git/ref/tags/{tag}"))?;
     let commit = if reference["object"]["type"] == "tag" {
         gh(&format!(

@@ -8,6 +8,10 @@ Dat/
 J2KEngine*.dll
 *.exe
 *.zip
+*.gguf
+/build/
+/dist/
+/model-source/
 config/dictionary.txt
 
 __pycache__/

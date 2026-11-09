@@ -16,7 +16,9 @@ target/release/syousetu-translate download \
   --start 1 --end 1 --out novel.txt --japanese --jobs 4
 ```
 
-On Windows append `.exe`, or use the BAT/GUI package. Model preparation downloads
+On Windows append `.exe`, or use the portable BAT/GUI package. The portable ZIP
+already includes the model and automatically selects the sibling `models` folder.
+Optional preparation for a nonbundled install or repair downloads
 the prebuilt INT8 model directly: **360,332,983 bytes** including small tokenizer
 and configuration files. `models/downloads.json` pins the runtime URLs, sizes
 and SHA-256 values. `models/manifest.json` records upstream source provenance
@@ -30,7 +32,7 @@ must match the same immutable model hash.
 `--model-dir PATH`, `SYOUSETU_MODEL_DIR` or the `model_dir` setting can select a
 different local directory. Defaults are under `%LOCALAPPDATA%\SyousetuTranslate`
 on Windows and `$XDG_DATA_HOME/SyousetuTranslate` (or `~/.local/share`) on Linux.
-The model is not inside the application ZIP. Model inference uses no network
+The portable release includes the model in `models/ja-ko`. Model inference uses no network
 client; a saved-HTML or local-file translation can run with networking disabled.
 Live novel downloads still need website access. Allow about 1GB of working RAM;
 immutable INT8 weights are shared. No original-weight conversion memory is used.

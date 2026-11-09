@@ -54,7 +54,16 @@ pub fn default_dir() -> PathBuf {
     std::env::var_os("SYOUSETU_MODEL_DIR")
         .filter(|p| !p.is_empty())
         .map(PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| bundled_dir(&exe))
+        })
         .unwrap_or_else(|| data_dir().join("models"))
+}
+fn bundled_dir(executable: &Path) -> Option<PathBuf> {
+    let candidate = executable.parent()?.join("models");
+    status(&candidate).ready.then_some(candidate)
 }
 #[derive(Debug, Serialize)]
 pub struct Status {
@@ -200,5 +209,22 @@ mod tests {
             assert_eq!(a.revision.len(), 40);
             assert_eq!(a.sha256.len(), 64);
         }
+    }
+    #[cfg(feature = "offline-model")]
+    #[test]
+    fn portable_discovery_requires_the_complete_bundle_next_to_the_executable() {
+        let root =
+            std::env::temp_dir().join(format!("syousetu-portable-path-{}", std::process::id()));
+        let exe = root.join("syousetu-translate.exe");
+        assert!(bundled_dir(&exe).is_none());
+        for asset in download_manifest() {
+            let path = root.join("models").join(asset.model).join(asset.file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            File::create(path).unwrap().set_len(asset.size).unwrap();
+        }
+        assert_eq!(bundled_dir(&exe), Some(root.join("models")));
+        fs::remove_file(root.join("models/ja-ko/vocab.json")).unwrap();
+        assert!(bundled_dir(&exe).is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 }

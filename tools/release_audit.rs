@@ -2,7 +2,7 @@
 //! enter the application graph or require a separate interpreter.
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
 type Result<T> = std::result::Result<T, String>;
-const FILES: [&str; 8] = [
+pub(crate) const FILES: [&str; 8] = [
     "README.md",
     "THIRD_PARTY_NOTICES.md",
     "licenses/Apache-2.0.txt",
@@ -88,7 +88,7 @@ fn u32le(data: &[u8], at: usize) -> Result<u32> {
             .unwrap(),
     ))
 }
-fn imports(data: &[u8], subsystem: u16) -> Result<Vec<String>> {
+pub(crate) fn imports(data: &[u8], subsystem: u16) -> Result<Vec<String>> {
     if data.get(..2) != Some(b"MZ") {
         return Err("Not a Windows executable".into());
     }
@@ -202,10 +202,20 @@ fn files(root: &Path, path: &Path, out: &mut BTreeSet<String>) -> Result<()> {
     }
     Ok(())
 }
-fn web(root: &Path) -> Result<()> {
+pub(crate) fn web(root: &Path) -> Result<()> {
     let mut actual = BTreeSet::new();
     files(root, root, &mut actual)?;
-    if actual != FILES.iter().map(|s| s.to_string()).collect() {
+    let bare = FILES.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+    let mut bundled = bare.clone();
+    for name in [
+        "config.json",
+        "model-int8.gguf",
+        "sentencepiece.bpe.model",
+        "vocab.json",
+    ] {
+        bundled.insert(format!("models/ja-ko/{name}"));
+    }
+    if actual != bare && actual != bundled {
         return Err(format!("Unexpected release files: {actual:?}"));
     }
     let mut names = BTreeSet::new();
@@ -217,7 +227,103 @@ fn web(root: &Path) -> Result<()> {
             names.insert(import);
         }
     }
-    println!("Release audit passed: eight files, only Windows/MSVC runtime imports: {names:?}");
+    println!(
+        "Release audit passed: {} files, only Windows/MSVC runtime imports: {names:?}",
+        actual.len()
+    );
+    Ok(())
+}
+fn directory_from_json(text: &str) -> Result<std::path::PathBuf> {
+    let suffix = text
+        .split_once("\"directory\"")
+        .ok_or("Directory missing in model status")?
+        .1;
+    let suffix = suffix
+        .trim_start()
+        .strip_prefix(':')
+        .ok_or("Invalid directory field")?
+        .trim_start()
+        .strip_prefix('"')
+        .ok_or("Invalid directory string")?;
+    let mut path = String::new();
+    let mut chars = suffix.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => return Ok(path.into()),
+            '\\' => match chars.next() {
+                Some('\\') => path.push('\\'),
+                Some('"') => path.push('"'),
+                Some('/') => path.push('/'),
+                _ => return Err("Unsupported path escape".into()),
+            },
+            ch => path.push(ch),
+        }
+    }
+    Err("Unterminated model directory".into())
+}
+fn portable(app: &Path, models: &Path, work: &Path) -> Result<()> {
+    let app = fs::canonicalize(app).map_err(|e| e.to_string())?;
+    let bundled = app.join("models/ja-ko");
+    fs::create_dir_all(&bundled).map_err(|e| e.to_string())?;
+    for name in [
+        "config.json",
+        "model-int8.gguf",
+        "sentencepiece.bpe.model",
+        "vocab.json",
+    ] {
+        fs::copy(models.join("ja-ko").join(name), bundled.join(name)).map_err(|e| e.to_string())?;
+    }
+    portable_existing(&app, work)
+}
+fn portable_existing(app: &Path, work: &Path) -> Result<()> {
+    let app = fs::canonicalize(app).map_err(|e| e.to_string())?;
+    fs::create_dir_all(work).map_err(|e| e.to_string())?;
+    let exe = app.join(if cfg!(windows) {
+        "syousetu-translate.exe"
+    } else {
+        "syousetu-translate"
+    });
+    let invoke = |args: &[&str]| -> Result<String> {
+        let result = Command::new(&exe)
+            .args(args)
+            .env("SYOUSETU_MODEL_DIR", "")
+            .current_dir(work)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !result.status.success() {
+            return Err(format!(
+                "Portable CLI failed: {}",
+                String::from_utf8_lossy(&result.stderr)
+            ));
+        }
+        Ok(String::from_utf8_lossy(&result.stdout).into_owned())
+    };
+    let status = invoke(&["models", "--verify"])?;
+    let selected = fs::canonicalize(directory_from_json(&status)?).map_err(|e| e.to_string())?;
+    if selected != fs::canonicalize(app.join("models")).map_err(|e| e.to_string())? {
+        return Err(format!("Bundled model was not selected: {status}"));
+    }
+    invoke(&[
+        "models",
+        "--prepare",
+        "--ca-bundle",
+        "intentionally-missing-ca.pem",
+    ])?;
+    let result = invoke(&[
+        "translate",
+        "--text",
+        "私は学生です。",
+        "--no-learning",
+        "--jobs",
+        "1",
+    ])?;
+    if !result.chars().any(|c| ('가'..='힣').contains(&c)) {
+        return Err("Portable inference produced no Korean".into());
+    }
+    println!(
+        "Portable model auto-discovery, offline preparation and translation passed: {}",
+        result.trim()
+    );
     Ok(())
 }
 fn check_ci(run: &str) -> Result<()> {
@@ -335,6 +441,14 @@ fn main() {
             .and_then(|r| check_ci(r)),
         Some("model-smoke") if args.len() == 4 => {
             model_smoke(Path::new(&args[2]), Path::new(&args[3]))
+        }
+        Some("portable") if args.len() == 5 => portable(
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+            Path::new(&args[4]),
+        ),
+        Some("portable-existing") if args.len() == 4 => {
+            portable_existing(Path::new(&args[2]), Path::new(&args[3]))
         }
         _ => Err(
             "Usage: release-audit deps | web DIR | check-ci RUN | model-smoke CLI NEW_DIR".into(),

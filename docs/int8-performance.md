@@ -80,10 +80,12 @@ behind `--features legacy` and tested in a separate job. The GUI enables only
 its required backend features. Some upstream Candle/GUI transitive dependencies
 remain required by their published crates; they are not separate release files.
 
-The Windows artifact is checked against an exact eight-file allowlist: two
+The Windows CI artifact is checked against an exact eight-file allowlist: two
 application executables, BAT launcher, usage guide, notices and three licenses.
+The portable release adds the four prepared INT8/tokenizer/configuration files
+under `models/ja-ko` (12 files total), automatically selected beside the executable.
 PE imports are checked for undocumented runtime libraries. No vendor DLLs,
-Python/Java/CUDA runtime, Cargo dependency source or model weights are bundled.
+Python/Java/CUDA runtime or Cargo dependency source is bundled.
 Windows/MSVC runtime dependencies are documented when packaging a release.
 
 CI runs Linux production tests, Windows production tests, lint and legacy
@@ -94,6 +96,10 @@ live-novel builds, compatibility DLL export step and duplicate CLI/DLL upload
 are removed. Uncompressed artifact upload avoids redundant compression before
 the final release ZIP. Release staging fetches only its tag and packages the
 exact verified source; draft-only and source/CI/artifact matching checks remain.
+The Rust packager streams the model into the ZIP; a Windows validation job
+extracts the staged ZIP, checks its hashes against the source and CI executables,
+and translates offline from a different working folder before publication.
+Actions use Node.js 24; Linux runners are pinned to Ubuntu 24.04.
 
 ## Verification
 

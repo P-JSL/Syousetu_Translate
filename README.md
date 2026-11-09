@@ -1,18 +1,19 @@
 # Syousetu Translate — Rust migration
 
-**v0.3.1: Direct SMaLL-100 INT8 download and offline Japanese→Korean translation. Windows x64 and Linux x64.**
+**v0.3.1: Bundled SMaLL-100 INT8 for immediate offline Japanese→Korean translation. Windows x64 and Linux x64.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 
 The default `internal` engine runs the public **SMaLL-100 INT8** model directly from
 Japanese to Korean in Rust/Candle. No English pivot, proprietary DLL, Python,
-GPU, or translation API is required. Preparation downloads the ready-to-run
-**354MB Q8_0 GGUF** plus tokenizer/configuration: **360,332,983 bytes total**,
-about 73% less than the previous 1.34GB source download. No FP32 model download
-or local conversion is performed. Pinned SHA-256 checks and resumable downloads
-protect preparation; existing verified INT8 files are reused. Inference then
-runs offline and shares weights between workers. Use a 64-bit system; opening
-a live novel URL still requires website access.
+GPU, or translation API is required. The portable Windows release includes the
+ready-to-run **354MB Q8_0 GGUF** plus tokenizer/configuration. Unzip the entire
+package and launch the BAT: the adjacent `models` folder is selected automatically,
+without initial model preparation or downloading. The model payload is
+**360,332,983 bytes**, about 73% less than the former FP32 source download.
+Optional repairs fetch only these prepared INT8 assets with pinned SHA-256 and
+resumable downloads. Inference shares weights and runs offline. A live novel URL
+still requires website access; use a 64-bit system.
 
 User-approved sentence corrections and source-qualified terminology edits are
 saved in a small local translation memory. This is lightweight adaptation,
@@ -57,8 +58,9 @@ Linux needs a graphical desktop with X11/OpenGL runtime libraries. A Korean syst
 can select a local font. The CLI does not require the `gui` feature or a display.
 
 Java/JRE/JavaFX and ezTrans XP are not needed for the default internal engine.
-In the GUI, choose **모델 준비 / 복구** once, then enter the work URL and run
-translation. Use **교정 기억** to save, edit or delete corrections.
+The portable GUI is ready after extraction; enter a work URL and run translation.
+For a source/nonbundled build, **모델 준비 / 복구** downloads only prepared INT8.
+Use **교정 기억** to save, edit or delete corrections.
 
 The `SyousetuTranslate-Web-Windows-x64` CI artifact contains both executables,
 the BAT launcher, notices and a [Windows usage guide](docs/windows-web-client.md).

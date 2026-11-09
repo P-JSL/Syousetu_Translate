@@ -246,7 +246,7 @@ impl Desktop {
         ui.label("internal: Rust 내부 오프라인 번역 · passthrough: 원문 저장");
         row_option(
             ui,
-            "모델 폴더 (비우면 사용자 데이터 폴더)",
+            "모델 폴더 (비우면 내장 모델 자동 선택)",
             &mut self.config.model_dir,
         );
         self.model_tools(ui);
