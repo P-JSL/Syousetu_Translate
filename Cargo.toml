@@ -1,6 +1,6 @@
 [package]
 name = "syousetu-translate"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"
@@ -8,7 +8,8 @@ default-run = "syousetu-translate"
 
 [features]
 default = ["offline-model"]
-offline-model = ["dep:candle-core", "dep:candle-nn", "dep:sentencepiece-rs", "dep:rayon"]
+offline-model = ["dep:candle-core", "dep:sentencepiece-rs", "dep:rayon"]
+model-tools = ["offline-model"]
 legacy = ["dep:fancy-regex", "dep:libloading"]
 gui = ["offline-model", "dep:eframe", "dep:tinyfiledialogs"]
 
@@ -23,7 +24,11 @@ required-features = ["offline-model"]
 
 [[example]]
 name = "convert_int8"
-required-features = ["offline-model"]
+required-features = ["model-tools"]
+
+[[example]]
+name = "stage_int8_model"
+required-features = ["model-tools"]
 
 [lib]
 name = "syousetu_translate"
@@ -45,8 +50,7 @@ url = "2"
 eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11"], optional = true }
 tinyfiledialogs = { version = "3.9", optional = true }
 sha2 = "0.10"
-candle-core = { version = "=0.11.1", optional = true }
-candle-nn = { version = "=0.11.1", optional = true }
+candle-core = { version = "=0.11.1", optional = true, default-features = false }
 sentencepiece-rs = { version = "=0.2.2", optional = true }
 rayon = { version = "1.10", optional = true }
 fs2 = "0.4"
@@ -67,3 +71,8 @@ rustls = { version = "0.23", default-features = false, features = ["std", "ring"
 lto = "thin"
 codegen-units = 8
 panic = "unwind"
+strip = "symbols"
+
+[patch.crates-io]
+# Preserve upstream CPU kernels, make unused tokenizer/archive adapters optional.
+candle-core = { path = "vendor/candle-core" }

@@ -319,7 +319,7 @@ impl Desktop {
             "SMaLL-100 INT8 준비됨 · 번역은 오프라인".to_owned()
         } else {
             format!(
-                "SMaLL-100 INT8 준비 필요 · 최초 다운로드 약 {}MB",
+                "SMaLL-100 INT8 직접 다운로드 · 최대 약 {}MB",
                 status.download_bytes / 1_000_000
             )
         });

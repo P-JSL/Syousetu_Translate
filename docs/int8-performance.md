@@ -1,4 +1,4 @@
-# SMaLL-100 INT8 and inference performance (0.3)
+# SMaLL-100 INT8 and inference performance (0.3.1)
 
 ## Model and preparation
 
@@ -11,17 +11,18 @@ softmax and residual activations remain floating point; this is not an entirely
 integer arithmetic network or SmoothQuant.
 
 The FP32 weight file is 1,330,973,772 bytes. The INT8 file is **354,200,608 bytes**
-(73.4% smaller). Conversion happens once during preparation, not every launch.
+(73.4% smaller). Conversion is a separate maintainer release step in Rust.
 Loading verifies the INT8 hash and reads quantized tensors directly. Immutable
 weights are shared across runners; each runner keeps independent attention caches.
 
-A fresh preparation still downloads approximately **1.34GB** of original pinned
-assets before conversion. This change does not claim a smaller first download.
-The original is retained, but inference no longer needs it. For an offline copy,
+A fresh preparation now downloads **360,332,983 bytes** of prepared INT8 and
+tokenizer/configuration files, about 73% less than the old 1,337,106,147 bytes.
+The app neither downloads nor converts the original weights. For an offline copy,
 place only `config.json`, `vocab.json`, `sentencepiece.bpe.model` and
 `model-int8.gguf` inside the selected model directory's `ja-ko` subdirectory.
 `models --verify` validates this INT8-only installation without FP32 weights.
 No model data is committed to Git or included in the application executables.
+See [direct INT8 preparation and minimal build](direct-int8-download.md).
 
 ## Research and applied changes
 

@@ -7,8 +7,8 @@
 //! forced Korean decoder prefix differ from Marian. Weights are shared Q8_0
 //! tensors; each runner owns its attention caches.
 use crate::int8::Weights;
+use crate::nn::{layer_norm, LayerNorm};
 use candle_core::{quantized::QMatMul, DType, Device, IndexOp, Module, Result, Tensor};
-use candle_nn::{layer_norm, LayerNorm};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -36,7 +36,7 @@ impl Linear {
     fn new(input: usize, output: usize, vb: Weights) -> Result<Self> {
         Ok(Self {
             weight: vb.matrix("weight", (output, input))?,
-            bias: vb.floats().get(output, "bias")?,
+            bias: vb.get(output, "bias")?,
         })
     }
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -122,7 +122,7 @@ impl Attention {
             Some(mask) => scores.broadcast_add(mask)?,
             None => scores,
         };
-        let context = candle_nn::ops::softmax_last_dim(&scores)?
+        let context = crate::nn::softmax_last_dim(&scores)?
             .matmul(&v)?
             .reshape((1, self.heads, length, self.head_dim))?
             .transpose(1, 2)?
@@ -156,24 +156,20 @@ impl Layer {
         };
         Ok(Self {
             attention: Attention::new(dim, heads, false, vb.pp("self_attn"))?,
-            attention_norm: layer_norm(dim, 1e-5, vb.pp("self_attn_layer_norm").floats())?,
+            attention_norm: layer_norm(dim, 1e-5, vb.pp("self_attn_layer_norm"))?,
             cross: if decoder {
                 Some(Attention::new(dim, heads, true, vb.pp("encoder_attn"))?)
             } else {
                 None
             },
             cross_norm: if decoder {
-                Some(layer_norm(
-                    dim,
-                    1e-5,
-                    vb.pp("encoder_attn_layer_norm").floats(),
-                )?)
+                Some(layer_norm(dim, 1e-5, vb.pp("encoder_attn_layer_norm"))?)
             } else {
                 None
             },
             ff1: Linear::new(dim, ff, vb.pp("fc1"))?,
             ff2: Linear::new(ff, dim, vb.pp("fc2"))?,
-            ff_norm: layer_norm(dim, 1e-5, vb.pp("final_layer_norm").floats())?,
+            ff_norm: layer_norm(dim, 1e-5, vb.pp("final_layer_norm"))?,
         })
     }
     fn forward(
@@ -252,8 +248,8 @@ impl Model {
             positions,
             encoder,
             decoder,
-            encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm").floats())?,
-            decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm").floats())?,
+            encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm"))?,
+            decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm"))?,
         })
     }
     fn embed(&self, ids: &[u32], past: usize) -> Result<Tensor> {

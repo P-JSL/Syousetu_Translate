@@ -3,6 +3,11 @@ name: Stage web release assets
 on:
   workflow_dispatch:
     inputs:
+      kind:
+        description: Application ZIP or maintainer-prepared INT8 model
+        type: choice
+        options: [web, model, model-smoke]
+        default: web
       tag:
         description: Existing release tag (for example v0.1.0)
         required: true
@@ -22,6 +27,7 @@ concurrency:
 
 jobs:
   stage:
+    if: inputs.kind == 'web' || !inputs.kind
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,3 +95,52 @@ jobs:
       - name: Upload assets to the existing draft
         run: |
           gh release upload "$RELEASE_TAG" dist/release/*.zip dist/release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+  model:
+    if: inputs.kind == 'model'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CANDLE_NUM_THREADS: 1
+      MODEL_TAG: ${{ inputs.tag }}
+      CI_RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: model-export-linux
+          cache-on-failure: true
+      - name: Validate source and produce the immutable INT8 model (Rust)
+        run: cargo run --locked --release --features model-tools --example stage_int8_model -- model-source dist/int8-model "$MODEL_TAG" "$CI_RUN_ID"
+      - name: Upload model and license to the verified draft
+        run: gh release upload "$MODEL_TAG" dist/int8-model/model-int8.gguf dist/int8-model/LICENSE-MIT-SMaLL100.txt dist/int8-model/MODEL_CARD.md dist/int8-model/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+  model-smoke:
+    if: inputs.kind == 'model-smoke'
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate the prebuilt CLI source (Rust, no app rebuild)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          rustc --edition=2021 tools/release_audit.rs -o release-audit.exe
+          ./release-audit.exe check-ci "$env:CI_RUN_ID"
+      - uses: actions/download-artifact@v4
+        with:
+          name: SyousetuTranslate-Web-Windows-x64
+          path: web-client
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download prepared INT8 and translate offline on Windows (Rust)
+        run: ./release-audit.exe model-smoke web-client/syousetu-translate.exe fresh-model

@@ -1,17 +1,18 @@
 # Syousetu Translate — Rust migration
 
-**v0.3: SMaLL-100 INT8, direct offline Japanese→Korean translation. Windows x64 and Linux x64.**
+**v0.3.1: Direct SMaLL-100 INT8 download and offline Japanese→Korean translation. Windows x64 and Linux x64.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 
 The default `internal` engine runs the public **SMaLL-100 INT8** model directly from
 Japanese to Korean in Rust/Candle. No English pivot, proprietary DLL, Python,
-GPU, or translation API is required. Preparation downloads approximately **1.34GB**
-of pinned, SHA-256-verified model assets once. Inference then runs offline;
-opening a live novel URL still requires access to that website. Weights are
-converted once to a persistent **354MB Q8_0 GGUF**, then loaded directly and
-shared between workers. FP32 weights are not needed after conversion. Use a 64-bit system;
-8GB RAM is recommended for initial loading/conversion.
+GPU, or translation API is required. Preparation downloads the ready-to-run
+**354MB Q8_0 GGUF** plus tokenizer/configuration: **360,332,983 bytes total**,
+about 73% less than the previous 1.34GB source download. No FP32 model download
+or local conversion is performed. Pinned SHA-256 checks and resumable downloads
+protect preparation; existing verified INT8 files are reused. Inference then
+runs offline and shares weights between workers. Use a 64-bit system; opening
+a live novel URL still requires website access.
 
 User-approved sentence corrections and source-qualified terminology edits are
 saved in a small local translation memory. This is lightweight adaptation,
@@ -31,6 +32,11 @@ cargo test --all-targets
 cargo clippy --all-targets
 cargo build --release
 ```
+
+Production features exclude the tokenizer/archive adapters, Candle NN,
+model-export tools and legacy backends. A std-only Rust dependency/package
+audit prevents them entering the shipping build. See
+[direct INT8 download and release scope](docs/direct-int8-download.md).
 
 The optional Rust desktop client ports the `translator7.zip` web launcher:
 **BAT → GUI → URL → Run → translation and save**, together with its settings

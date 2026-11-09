@@ -34,6 +34,8 @@ pub mod int8;
 mod ordered;
 #[cfg(feature = "offline-model")]
 pub mod offline;
+#[cfg(feature = "offline-model")]
+mod nn;
 
 #[cfg(feature = "legacy")]
 mod legacy_abi;

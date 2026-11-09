@@ -1,4 +1,4 @@
-# Direct offline translation (0.3)
+# Direct offline translation (0.3.1)
 
 The default `internal` engine runs **SMaLL-100 INT8** directly from Japanese to Korean
 in Rust. The source-visible recovery client is retained; neither ezTrans XP's
@@ -17,20 +17,23 @@ target/release/syousetu-translate download \
 ```
 
 On Windows append `.exe`, or use the BAT/GUI package. Model preparation downloads
-approximately 1.34GB from the public Hugging Face model repository. The immutable
-commit, individual sizes and SHA-256 digests are embedded from
-`models/manifest.json`. Verified `.safetensors` are converted once to a 354MB Q8_0 GGUF;
-its size/SHA-256 are pinned in `models/int8.json`. Inference reads only the INT8
-file and tokenizer/config files. Pickle and remote Python code are never executed. Existing assets are verified
-before reuse, downloads use temporary files, and concurrent preparation is locked.
+the prebuilt INT8 model directly: **360,332,983 bytes** including small tokenizer
+and configuration files. `models/downloads.json` pins the runtime URLs, sizes
+and SHA-256 values. `models/manifest.json` records upstream source provenance
+for the separate maintainer exporter. The shipping app never downloads FP32
+weights or performs conversion. The prepared GGUF is pinned in `models/int8.json`.
+Existing assets are verified before reuse, partial files support HTTP Range
+resume, and concurrent preparation is locked. A GitHub API asset fallback
+handles public-download routing failures without requiring a token. Both paths
+must match the same immutable model hash.
 
 `--model-dir PATH`, `SYOUSETU_MODEL_DIR` or the `model_dir` setting can select a
 different local directory. Defaults are under `%LOCALAPPDATA%\SyousetuTranslate`
 on Windows and `$XDG_DATA_HOME/SyousetuTranslate` (or `~/.local/share`) on Linux.
 The model is not inside the application ZIP. Model inference uses no network
 client; a saved-HTML or local-file translation can run with networking disabled.
-Live novel downloads still need website access. RAM 8GB is recommended for the
-initial floating-point loading/Q8 conversion; immutable Q8 weights are shared.
+Live novel downloads still need website access. Allow about 1GB of working RAM;
+immutable INT8 weights are shared. No original-weight conversion memory is used.
 `download --cache-html-dir PATH` saves the parsed work index as `work.json` and
 each original chapter as `1.html`, `2.html`, etc., for private local verification.
 

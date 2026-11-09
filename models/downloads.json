@@ -1,0 +1,31 @@
+[
+  {
+    "model": "ja-ko",
+    "file": "config.json",
+    "size": 890,
+    "sha256": "26fd3989cea6037d432c480f5181d05c088a613394d0361edc6605a6a1058715",
+    "url": "https://huggingface.co/alirezamsh/small100/resolve/8ab680e26a596d2e3d2d2d17ae0f68df1037328c/config.json?download=true"
+  },
+  {
+    "model": "ja-ko",
+    "file": "model-int8.gguf",
+    "size": 354200608,
+    "sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+    "url": "https://github.com/P-JSL/Syousetu_Translate/releases/download/models-small100-int8-v1/model-int8.gguf",
+    "github_release_api": "https://api.github.com/repos/P-JSL/Syousetu_Translate/releases/tags/models-small100-int8-v1"
+  },
+  {
+    "model": "ja-ko",
+    "file": "sentencepiece.bpe.model",
+    "size": 2423393,
+    "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a",
+    "url": "https://huggingface.co/alirezamsh/small100/resolve/8ab680e26a596d2e3d2d2d17ae0f68df1037328c/sentencepiece.bpe.model?download=true"
+  },
+  {
+    "model": "ja-ko",
+    "file": "vocab.json",
+    "size": 3708092,
+    "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc",
+    "url": "https://huggingface.co/alirezamsh/small100/resolve/8ab680e26a596d2e3d2d2d17ae0f68df1037328c/vocab.json?download=true"
+  }
+]

@@ -2,21 +2,28 @@
 //! values with block scales; normalization/biases remain floating point.
 use anyhow::Result;
 use candle_core::{
-    quantized::{
-        gguf_file::{self, Content, Value},
-        GgmlDType, QMatMul, QTensor,
-    },
-    DType, Device, Tensor,
+    quantized::{gguf_file::Content, GgmlDType, QMatMul, QTensor},
+    Device, Tensor,
 };
-use candle_nn::VarBuilder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     fs::{self, File},
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufReader, Read},
     path::Path,
     sync::Arc,
+};
+#[cfg(feature = "model-tools")]
+use {
+    candle_core::{
+        quantized::gguf_file::{self, Value},
+        DType,
+    },
+    std::{
+        collections::BTreeMap,
+        io::{BufWriter, Write},
+    },
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -86,17 +93,10 @@ mod tests {
         assert!(!spec.file.contains(['/', '\\']));
     }
 }
-pub fn ensure(directory: &Path) -> Result<()> {
-    if verify(directory).is_ok() {
-        return Ok(());
-    }
-    let destination = directory.join(spec().file);
-    eprintln!("SMaLL-100 INT8 모델을 한 번 변환해 저장합니다...");
-    convert(&directory.join("model.safetensors"), &destination)?;
-    verify(directory)
-}
 /// Writes only tensors used by inference. Q/K/V weights are fused before
 /// quantization along full rows, preserving the original block quantization.
+/// Maintainer-only tooling: the shipping app downloads prepared INT8 directly.
+#[cfg(feature = "model-tools")]
 pub fn convert(source: &Path, destination: &Path) -> Result<Spec> {
     anyhow::ensure!(hash(source)? == source_hash(), "원본 모델 체크섬 불일치");
     let data = candle_core::safetensors::BufferedSafetensors::new(fs::read(source)?)?;
@@ -184,7 +184,7 @@ pub fn convert(source: &Path, destination: &Path) -> Result<Spec> {
 pub struct Weights {
     prefix: String,
     quantized: Arc<HashMap<String, Arc<QTensor>>>,
-    floats: VarBuilder<'static>,
+    floats: Arc<HashMap<String, Tensor>>,
 }
 impl Weights {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -218,7 +218,7 @@ impl Weights {
         Ok(Self {
             prefix: String::new(),
             quantized: Arc::new(quantized),
-            floats: VarBuilder::from_tensors(floats, DType::F32, &Device::Cpu),
+            floats: Arc::new(floats),
         })
     }
     pub fn pp(&self, path: impl std::fmt::Display) -> Self {
@@ -250,11 +250,15 @@ impl Weights {
         }
         QMatMul::from_arc(Arc::clone(tensor))
     }
-    pub fn floats(&self) -> VarBuilder<'static> {
-        if self.prefix.is_empty() {
-            self.floats.clone()
-        } else {
-            self.floats.pp(&self.prefix)
+    pub fn get(&self, size: usize, key: &str) -> candle_core::Result<Tensor> {
+        let name = self.name(key);
+        let tensor = self
+            .floats
+            .get(&name)
+            .ok_or_else(|| candle_core::Error::Msg(format!("모델 텐서 없음: {name}")))?;
+        if tensor.dims() != [size] {
+            candle_core::bail!("모델 텐서 크기 불일치: {name}");
         }
+        Ok(tensor.clone())
     }
 }

@@ -9,8 +9,9 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   [source](https://github.com/alirezamshi/small100) ·
   [MIT license](licenses/MIT-SMaLL100.txt).
   The pinned safetensors revision and SHA-256 values are in `models/manifest.json`.
-  The application converts floating-point weights once to persistent INT8 Q8_0
-  GGUF (`models/int8.json`), with fused Q/K/V projections; this changes
+  A separate Rust maintainer exporter prepares persistent INT8 Q8_0 GGUF
+  (`models/int8.json`), with fused Q/K/V projections. The app downloads this
+  prepared model directly using `models/downloads.json`; quantization changes
   numerical precision and may change generated translations.
 * **Hugging Face Transformers**, Apache-2.0, supplies the reference M2M100
   architecture and language-token specification. `src/m2m.rs` is a Rust
@@ -18,7 +19,11 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   independently owned attention caches, and CPU inference only.
   [Reference](https://github.com/huggingface/transformers/tree/v4.46.3/src/transformers/models/m2m_100).
 * **Hugging Face Candle 0.11.1**, Apache-2.0, supplies tensor operations and
-  quantization. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
+  quantization. A feature-only local patch in `vendor/candle-core/PATCHES.md`
+  makes unused tokenizer/archive adapters optional without changing numerical
+  kernels. `src/nn.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
+  preserving the original reduction order; the full Candle NN crate is not a
+  production dependency. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
   SentencePiece normalization/BPE processing. Python and PyTorch are used only
   for development comparison and are not application dependencies.
 * **P-JSL/gacha_pickup_calculator**, copyright 2026 P-JSL, MIT, commit
