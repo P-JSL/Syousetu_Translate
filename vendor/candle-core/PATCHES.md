@@ -12,7 +12,11 @@ Changes are limited to Cargo feature gates:
   `quantized::tokenizer` adapter. The app uses `sentencepiece-rs` instead.
 - `archive` enables ZIP and the optional NPY/NPZ/Pickle adapters and ZIP error
   variant. The app uses GGUF; the maintainer exporter uses safetensors.
+- `safetensors` enables the original-weight reader, its memory-map/yoke support
+  and associated error variants. Only the separate `model-tools` build enables it.
 
-Neither feature is enabled in application or model-export builds. CPU tensor
+Tokenizer/archive features are disabled in all builds. The safetensors feature
+is disabled in application builds and enabled only for model export. CPU tensor
 operations, numerical kernels, quantization, GGUF reading and attention math
-are unchanged. Root Cargo's patch applies equally to Candle NN's dependency.
+are unchanged. The application no longer depends on the full Candle NN crate.
+Upstream examples, tests and benchmarks are omitted from this source-only copy.

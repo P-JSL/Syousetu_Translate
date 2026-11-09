@@ -18,6 +18,7 @@ fn banned(name: &str) -> bool {
         "tokenizers"
             | "candle-nn"
             | "zip"
+            | "safetensors"
             | "fancy-regex"
             | "cudarc"
             | "candle-kernels"

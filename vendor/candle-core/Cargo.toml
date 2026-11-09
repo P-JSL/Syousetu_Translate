@@ -47,6 +47,7 @@ cutile = [
 default = []
 archive = ["dep:zip"]
 tokenizers = ["dep:tokenizers"]
+safetensors = ["dep:safetensors", "dep:memmap2", "dep:yoke"]
 metal = [
     "dep:objc2-metal",
     "dep:objc2-foundation",
@@ -137,6 +138,7 @@ version = "0.2.15"
 [dependencies.memmap2]
 version = "0.9.3"
 features = ["stable_deref_trait"]
+optional = true
 
 [dependencies.num-traits]
 version = "0.2.15"
@@ -166,6 +168,7 @@ version = "1.7.0"
 
 [dependencies.safetensors]
 version = "0.8.0"
+optional = true
 
 [dependencies.thiserror]
 version = "2"
@@ -173,6 +176,7 @@ version = "2"
 [dependencies.yoke]
 version = "0.8.1"
 features = ["derive"]
+optional = true
 
 [dependencies.zerocopy]
 version = "0.8"

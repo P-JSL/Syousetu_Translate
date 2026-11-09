@@ -198,9 +198,11 @@ pub enum Error {
     Io(#[from] std::io::Error),
 
     /// SafeTensor error.
+    #[cfg(feature = "safetensors")]
     #[error(transparent)]
     SafeTensor(#[from] safetensors::SafeTensorError),
 
+    #[cfg(feature = "safetensors")]
     #[error("unsupported safetensor dtype {0:?}")]
     UnsupportedSafeTensorDtype(safetensors::Dtype),
 

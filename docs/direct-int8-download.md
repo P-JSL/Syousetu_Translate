@@ -29,7 +29,8 @@ Rust. No Python/transformers/bitsandbytes/accelerate/CUDA installation is needed
   pinned hash. It is never enabled by shipping builds or included in the ZIP.
 - `legacy`: recovery/DLL/glossary tools, tested independently and excluded from
   shipping builds.
-- Candle core's optional `tokenizers` and `archive` adapters are disabled. A
+- Candle core's optional `tokenizers`, `archive` and original-weight `safetensors`
+  adapters are disabled in production. Only `model-tools` enables safetensors. A
   small, documented feature patch keeps CPU/quantized kernels intact. Full
   Candle NN is replaced with only its two required F32 CPU kernels in `src/nn.rs`.
 - `tools/release_audit.rs` uses only Rust std. CI inspects the *normal*

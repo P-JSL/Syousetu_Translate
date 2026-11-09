@@ -78,6 +78,7 @@ pub mod op;
 #[cfg(feature = "archive")]
 pub mod pickle;
 pub mod quantized;
+#[cfg(feature = "safetensors")]
 pub mod safetensors;
 pub mod scalar;
 pub mod shape;
