@@ -87,6 +87,9 @@ mod tests {
                     Err(e) => panic!("{e}"),
                 }
             };
+            // Windows accept() can inherit the listener's nonblocking mode;
+            // rustls::StreamOwned needs a blocking socket for this test server.
+            socket.set_nonblocking(false).unwrap();
             socket
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
@@ -113,9 +116,16 @@ mod tests {
             .timeout(Duration::from_secs(5))
             .build()
             .unwrap();
+        let rejected = client
+            .get(url)
+            .send()
+            .expect_err("untrusted CA must never be accepted");
+        let reason = format!("{rejected:?}").to_ascii_lowercase();
         assert!(
-            client.get(url).send().is_err(),
-            "untrusted CA must never be accepted"
+            reason.contains("certificate")
+                || reason.contains("unknownissuer")
+                || reason.contains("untrustedroot"),
+            "Expected a certificate validation failure, got {reason}"
         );
         task.join().unwrap();
         let (url, pem, task) = endpoint();

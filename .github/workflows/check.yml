@@ -33,6 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           shared-key: production-${{ matrix.os }}
       - name: Verify installer and package rules with synthetic fixtures
         run: python -m unittest discover -s scripts -p 'test_*.py'
@@ -75,6 +76,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           shared-key: lint-linux
       - run: cargo clippy --locked --features gui --all-targets -- -D warnings
 
@@ -88,5 +90,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           shared-key: legacy-linux
       - run: cargo test --locked --no-default-features --features legacy --all-targets
