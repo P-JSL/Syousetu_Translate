@@ -2359,42 +2359,11 @@ impl GgmlType for BlockQ8K {
     fn from_float(xs: &[f32], ys: &mut [Self]) {
         #[cfg(target_feature = "neon")]
         return super::neon::quantize_row_q8k(xs, ys);
-
-        let k = xs.len();
-        debug_assert!(
-            k.is_multiple_of(QK_K),
-            "quantize_row_q8k: {k} is not divisible by {QK_K}"
-        );
-        for (i, y) in ys.iter_mut().enumerate() {
-            let mut max = 0f32;
-            let mut amax = 0f32;
-            let xs = &xs[i * QK_K..(i + 1) * QK_K];
-            for &x in xs.iter() {
-                if amax < x.abs() {
-                    amax = x.abs();
-                    max = x;
-                }
-            }
-            if amax == 0f32 {
-                y.d = 0f32;
-                y.qs.fill(0);
-                y.bsums.fill(0)
-            } else {
-                let iscale = -127f32 / max;
-                for (j, q) in y.qs.iter_mut().enumerate() {
-                    let v = (iscale * xs[j]).round();
-                    *q = v.clamp(-128., 127.) as i8
-                }
-                for j in 0..QK_K / 16 {
-                    let mut sum = 0i32;
-                    for ii in 0..16 {
-                        sum += y.qs[j * 16 + ii] as i32
-                    }
-                    y.bsums[j] = sum as i16
-                }
-                y.d = 1.0 / iscale
-            }
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if has_avx2_fma() {
+            return unsafe { super::quantize_x86::quantize_q8k(xs, ys) };
         }
+        quantize_q8k_reference(xs, ys)
     }
 
     fn to_float(xs: &[Self], ys: &mut [f32]) {
@@ -2416,6 +2385,39 @@ impl GgmlType for BlockQ8K {
 /// cache while the rhs quad is streamed through once per tile instead of once per lhs row. This
 /// matches the 16-row src1 blocking of `ggml_compute_forward_mul_mat`.
 const MATMUL_ROW_TILE: usize = 16;
+
+/// Scalar Q8K reference used on unsupported CPUs and for numerical regression.
+#[doc(hidden)]
+pub fn quantize_q8k_reference(xs: &[f32], ys: &mut [BlockQ8K]) {
+    debug_assert!(xs.len().is_multiple_of(QK_K));
+    for (index, y) in ys.iter_mut().enumerate() {
+        let values = &xs[index * QK_K..(index + 1) * QK_K];
+        let (mut amax, mut maximum) = (0f32, 0f32);
+        for &value in values {
+            if amax < value.abs() {
+                amax = value.abs();
+                maximum = value;
+            }
+        }
+        if amax == 0.0 {
+            y.d = 0.0;
+            y.qs.fill(0);
+            y.bsums.fill(0);
+            continue;
+        }
+        let scale = -127f32 / maximum;
+        for (q, &value) in y.qs.iter_mut().zip(values) {
+            *q = (scale * value).round().clamp(-128.0, 127.0) as i8;
+        }
+        for (index, sum) in y.bsums.iter_mut().enumerate() {
+            *sum = y.qs[index * 16..(index + 1) * 16]
+                .iter()
+                .map(|&q| q as i16)
+                .sum();
+        }
+        y.d = 1.0 / scale;
+    }
+}
 
 // https://github.com/ggml-org/llama.cpp/blob/aa3ee0eb0b80efca126cedf9bcb4fb5864b46ce3/ggml/src/ggml-cpu/ggml-cpu.c#L1205
 pub fn matmul<T: GgmlType>(
@@ -2473,6 +2475,14 @@ pub fn matmul<T: GgmlType>(
         // f32, f16, and bf16 support direct copy
         if T::DIRECT_COPY {
             T::VecDotType::direct_copy(lhs, lhs_b);
+        } else if m > 1 && k_in_blocks > 0 && rayon::current_num_threads() > 1 {
+            use rayon::prelude::*;
+            lhs_b
+                .par_chunks_mut(k_in_blocks)
+                .zip(lhs.par_chunks(k))
+                .for_each(|(dst, src)| {
+                    T::VecDotType::from_float(src, dst);
+                });
         } else {
             for row_idx in 0..m {
                 let lhs_b_mut = &mut lhs_b[row_idx * k_in_blocks..(row_idx + 1) * k_in_blocks];
@@ -2559,7 +2569,7 @@ pub fn matmul<T: GgmlType>(
         // worker walking a range of items keeps one tile of quantized lhs rows hot in L1 and
         // reads each weight quad once per tile instead of once per row.
         let row_tiles = m.div_ceil(MATMUL_ROW_TILE);
-        pool.execute_chunked(row_tiles * quads_total, |range| {
+        super::utils::execute_matmul_tiles(row_tiles * quads_total, (m, k, n), |range| {
             for item in range {
                 let row_start = (item / quads_total) * MATMUL_ROW_TILE;
                 let row_end = m.min(row_start + MATMUL_ROW_TILE);

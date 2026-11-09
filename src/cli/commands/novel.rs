@@ -4,7 +4,7 @@ use super::super::{
     options,
     progress::emit_progress,
 };
-use crate::storage::AtomicFile;
+use crate::storage::StreamingFile;
 use crate::{
     config::Config,
     novel::{
@@ -129,8 +129,9 @@ pub(crate) fn download(args: &[String]) -> Result<()> {
     } else {
         bail!("필수 옵션 --out 누락; 자동 이름은 --auto-output 또는 --output-dir을 지정하세요");
     };
-    let mut out = AtomicFile::new(&output)?;
+    let mut out = StreamingFile::create(&output)?;
     out.write_all(output::format_header(&mut session, &work)?.as_bytes())?;
+    out.flush()?;
     for i in first..=end {
         let file =
             value(args, "--episode-html-dir").map(|dir| Path::new(&dir).join(format!("{i}.html")));
@@ -155,11 +156,11 @@ pub(crate) fn download(args: &[String]) -> Result<()> {
             &config.comment_separator,
         )
         .with_context(|| format!("에피소드 {i} 파싱 실패: {}", work.episodes[i - 1]))?;
-        out.write_all(output::format_episode(&mut session, &episode, i, end, &config)?.as_bytes())?;
-        eprintln!("[{i}/{end}] 저장 대기: {}", episode.title);
+        output::write_episode(&mut out, &mut session, &episode, i, end, &config)?;
+        eprintln!("[{i}/{end}] 저장 완료: {}", episode.title);
         emit_progress(args, i - first + 1, end - first + 1, "chapters");
     }
-    out.commit()?;
+    out.finish()?;
     println!("Saved {} episodes to {}", end - first + 1, output.display());
     Ok(())
 }

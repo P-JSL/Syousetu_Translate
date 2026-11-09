@@ -2,6 +2,9 @@
 use anyhow::{Context, Result};
 use candle_core::{CpuStorage, Storage, Tensor};
 use std::collections::HashSet;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
+mod simd;
 
 pub(super) fn select_logits(
     scores: &Tensor,
@@ -27,6 +30,18 @@ pub(super) fn select(
     eos: u32,
     blocked: &HashSet<u32>,
 ) -> Option<u32> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if scores.len().min(vocab) >= 64 {
+        if let Some(id) = simd::maximum(scores, vocab, eos) {
+            if !blocked.contains(&id) {
+                return Some(id);
+            }
+        }
+    }
+    select_scalar(scores, vocab, eos, blocked)
+}
+
+fn select_scalar(scores: &[f32], vocab: usize, eos: u32, blocked: &HashSet<u32>) -> Option<u32> {
     let mut best: Option<(u32, f32)> = None;
     for (id, &score) in scores.iter().take(vocab).enumerate() {
         if (id < 4 && id != eos as usize) || !score.is_finite() {
@@ -43,9 +58,64 @@ pub(super) fn select(
     best.map(|(id, _)| id)
 }
 
+pub(super) fn select_logits_mapped(
+    scores: &Tensor,
+    vocab: usize,
+    eos: u32,
+    blocked: &HashSet<u32>,
+    ids: Option<&[u32]>,
+) -> Result<u32> {
+    let Some(ids) = ids else {
+        return select_logits(scores, vocab, eos, blocked);
+    };
+    anyhow::ensure!(
+        scores.rank() == 1 && scores.elem_count() == ids.len(),
+        "어휘 점수와 ID 매핑 길이가 다릅니다"
+    );
+    let (storage, layout) = scores.storage_and_layout();
+    let Storage::Cpu(CpuStorage::F32(values)) = &*storage else {
+        anyhow::bail!("출력 점수는 CPU F32여야 합니다");
+    };
+    let (start, end) = layout
+        .contiguous_offsets()
+        .context("출력 점수가 연속 메모리가 아닙니다")?;
+    let mut best: Option<(u32, f32)> = None;
+    for (&id, &score) in ids.iter().zip(&values[start..end]) {
+        if id as usize >= vocab || (id < 4 && id != eos) || !score.is_finite() {
+            continue;
+        }
+        if best.is_none_or(|(old_id, old_score)| {
+            score.total_cmp(&old_score).is_gt()
+                || (score.total_cmp(&old_score).is_eq() && id < old_id)
+        }) && !blocked.contains(&id)
+        {
+            best = Some((id, score));
+        }
+    }
+    best.map(|(id, _)| id)
+        .context("모델이 유효한 출력 토큰을 생성하지 못했습니다")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mapped_scores_keep_original_id_ties_specials_and_repetition_bans() {
+        let scores = Tensor::new(&[1.0f32, 1.0, 1.0, 100.0], &candle_core::Device::Cpu).unwrap();
+        let ids = [9, 4, 2, 0];
+        assert_eq!(
+            select_logits_mapped(&scores, 20, 2, &HashSet::new(), Some(&ids)).unwrap(),
+            2
+        );
+        assert_eq!(
+            select_logits_mapped(&scores, 20, 2, &[2].into(), Some(&ids)).unwrap(),
+            4
+        );
+        assert_eq!(
+            select_logits_mapped(&scores, 20, 2, &[2, 4].into(), Some(&ids)).unwrap(),
+            9
+        );
+    }
     fn reference(scores: &[f32], vocab: usize, eos: u32, blocked: &HashSet<u32>) -> Option<u32> {
         scores
             .iter()
@@ -92,6 +162,49 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+    #[test]
+    fn vector_selection_matches_reference_at_boundaries_and_with_blocked_maxima() {
+        let mut seed = 3u64;
+        for length in [63usize, 64, 65, 127, 128, 1025, 128100] {
+            let mut scores = (0..length)
+                .map(|_| {
+                    seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    f32::from_bits((seed >> 32) as u32)
+                })
+                .collect::<Vec<_>>();
+            scores[2] = f32::MAX;
+            scores[4] = -0.0;
+            scores[5] = 0.0;
+            scores[17] = f32::MAX;
+            scores[33] = f32::MAX;
+            for vocab in [
+                0,
+                3,
+                63,
+                64,
+                65,
+                length.saturating_sub(1),
+                length,
+                length + 1,
+            ] {
+                for eos in [0, 2, 4, 30] {
+                    for blocked in [HashSet::new(), [2, 17].into(), [2, 17, 33].into()] {
+                        assert_eq!(
+                            select(&scores, vocab, eos, &blocked),
+                            reference(&scores, vocab, eos, &blocked)
+                        );
+                    }
+                }
+            }
+            for value in [-0.0, 0.0, f32::NEG_INFINITY, f32::INFINITY, f32::NAN] {
+                scores.fill(value);
+                assert_eq!(
+                    select(&scores, length, 2, &HashSet::new()),
+                    reference(&scores, length, 2, &HashSet::new())
+                );
             }
         }
     }

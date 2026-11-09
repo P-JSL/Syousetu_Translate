@@ -1,5 +1,6 @@
-use super::{ordered, runner::Runner, text::japanese, OfflineTranslator};
+use super::{runner::batched, text::japanese, OfflineTranslator};
 use anyhow::{Context, Result};
+use std::sync::Arc;
 impl OfflineTranslator {
     fn select_parallel(&mut self, lines: &[String]) -> Result<bool> {
         if let Some(selected) = self.parallel {
@@ -16,33 +17,42 @@ impl OfflineTranslator {
         let samples = candidates
             .into_iter()
             .filter(|s| seen.insert(s.as_str()))
-            .take(4)
+            .take(self.runners.len().clamp(4, 16))
             .cloned()
             .collect::<Vec<_>>();
         if samples.len() < 4 {
             return Ok(false);
         }
-        eprintln!("처음 본문 묶음의 단일·병렬 처리 성능과 결과 일치를 확인합니다...");
+        eprintln!("처음 본문 묶음의 단일·배치 처리 성능과 결과 일치를 확인합니다...");
         self.cache.evict(&samples);
         let start = std::time::Instant::now();
         let expected = samples
             .iter()
-            .map(|s| self.translate(s))
+            .map(|s| self.translate_prepared(s))
             .collect::<Result<Vec<_>>>()?;
         let serial_seconds = start.elapsed().as_secs_f64();
         self.cache.evict(&samples);
         let start = std::time::Instant::now();
-        let candidate = ordered::map(&mut self.runners, &samples, Runner::translate);
+        let mut candidate = vec![None; samples.len()];
+        let pool = Arc::clone(&self.compute_pool);
+        let result = batched::translate(&mut self.runners, &samples, &pool, |index, text| {
+            candidate[index] = Some(text);
+            Ok(())
+        });
         let parallel_seconds = start.elapsed().as_secs_f64();
-        let matches = candidate.as_ref().is_ok_and(|actual| actual == &expected);
+        let matches = result.is_ok()
+            && candidate
+                .iter()
+                .zip(&expected)
+                .all(|(actual, expected)| actual.as_ref() == Some(expected));
         let selected = matches && parallel_seconds < serial_seconds * 0.9;
         for (source, text) in samples.iter().zip(expected) {
             self.cache.insert(source, text);
         }
         self.parallel = Some(selected);
         eprintln!(
-            "처리 방식 선택: {} · 단일 {:.2}초 / 병렬 {:.2}초 · 결과 일치 {}",
-            if selected { "병렬" } else { "단일" },
+            "처리 방식 선택: {} · 단일 {:.2}초 / 배치 {:.2}초 · 결과 일치 {}",
+            if selected { "배치 병렬" } else { "단일" },
             serial_seconds,
             parallel_seconds,
             matches
@@ -54,18 +64,31 @@ impl OfflineTranslator {
         lines: &[String],
         progress: impl Fn(usize, usize) + Sync,
     ) -> Result<Vec<String>> {
+        let mut output = Vec::with_capacity(lines.len());
+        self.translate_lines_to(lines, progress, &mut |_, text| {
+            output.push(text.to_owned());
+            Ok(())
+        })?;
+        Ok(output)
+    }
+    pub fn translate_lines_to(
+        &mut self,
+        lines: &[String],
+        progress: impl Fn(usize, usize) + Sync,
+        emit: &mut dyn FnMut(usize, &str) -> Result<()>,
+    ) -> Result<()> {
+        self.prepare_vocabulary(lines)?;
         let parallel = self.select_parallel(lines)?;
         progress(0, lines.len());
         if !parallel {
-            let mut output = Vec::with_capacity(lines.len());
-            for text in lines {
-                output.push(
-                    self.translate(text)
-                        .with_context(|| format!("본문 {}번째 줄 번역 실패", output.len() + 1))?,
-                );
-                progress(output.len(), lines.len());
+            for (index, text) in lines.iter().enumerate() {
+                let translated = self
+                    .translate_prepared(text)
+                    .with_context(|| format!("본문 {}번째 줄 번역 실패", index + 1))?;
+                emit(index, &translated)?;
+                progress(index + 1, lines.len());
             }
-            return Ok(output);
+            return Ok(());
         }
         let batch = super::batch::Batch::new(lines, |source| {
             self.runners[0]
@@ -80,21 +103,24 @@ impl OfflineTranslator {
                 })
         });
         progress(batch.ready, lines.len());
-        let completed = std::sync::Mutex::new(batch.ready);
-        let translated = ordered::map(&mut self.runners, &batch.unique, |runner, text| {
-            let output = runner.translate(text)?;
-            // Serialize progress reporting so concurrent completions cannot
-            // cause the displayed counter to move backwards.
-            let mut done = completed
-                .lock()
-                .map_err(|_| anyhow::anyhow!("진행률 잠금 오류"))?;
-            *done += batch.count(text);
-            progress(*done, lines.len());
-            Ok(output)
+        let mut completed = batch.ready;
+        let mut values = vec![None; batch.unique.len()];
+        let mut next = 0;
+        batch.emit_ready(&values, &mut next, emit)?;
+        let pool = Arc::clone(&self.compute_pool);
+        let cache = &mut self.cache;
+        batched::translate(&mut self.runners, &batch.unique, &pool, |index, text| {
+            cache.insert(&batch.unique[index], text.clone());
+            completed += batch.count(&batch.unique[index]);
+            values[index] = Some(text);
+            batch.emit_ready(&values, &mut next, emit)?;
+            progress(completed, lines.len());
+            Ok(())
         })?;
-        for (source, text) in batch.unique.iter().zip(&translated) {
-            self.cache.insert(source, text.clone());
-        }
-        batch.restore(translated)
+        anyhow::ensure!(
+            next == lines.len(),
+            "번역 결과가 누락되었습니다. 완료된 줄은 출력 파일에 보존됩니다"
+        );
+        Ok(())
     }
 }

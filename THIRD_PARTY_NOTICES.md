@@ -20,9 +20,10 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   independently owned attention caches, and CPU inference only.
   [Reference](https://github.com/huggingface/transformers/tree/v4.46.3/src/transformers/models/m2m_100).
 * **Hugging Face Candle 0.11.1**, Apache-2.0, supplies tensor operations and
-  quantization. A feature-only local patch in `vendor/candle-core/PATCHES.md`
-  makes unused tokenizer/archive adapters optional without changing numerical
-  kernels. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
+  quantization. Local patches in `vendor/candle-core/PATCHES.md` make unused
+  adapters optional, schedule batched CPU work on a bounded pool, specialize Q8
+  register blocks, and vectorize activation quantization while preserving its
+  scalar rounding/scales. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
   preserving the original reduction order; the full Candle NN crate is not a
   production dependency. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
   SentencePiece normalization/BPE processing. Python and PyTorch are used only

@@ -11,7 +11,7 @@ pub(super) fn bundled() -> Result<Memory> {
                     MAX_BYTES as usize,
                 )
                 .map_err(|e| anyhow::anyhow!("기본 교정 압축 해제 실패: {e:?}"))?;
-                let memory: Memory =
+                let mut memory: Memory =
                     serde_json::from_slice(&bytes).context("기본 교정 데이터 해석 실패")?;
                 anyhow::ensure!(
                     memory.version == 1
@@ -27,6 +27,7 @@ pub(super) fn bundled() -> Result<Memory> {
                     super::valid(&term.previous)?;
                     super::valid(&term.corrected)?;
                 }
+                super::core_dictionary::apply(&mut memory)?;
                 Ok(memory)
             })();
             result.map_err(|e| format!("{e:#}"))
@@ -36,6 +37,7 @@ pub(super) fn bundled() -> Result<Memory> {
 }
 pub(super) fn merge(mut user: Memory) -> Result<Memory> {
     if user.defaults_applied {
+        super::core_dictionary::apply(&mut user)?;
         return Ok(user);
     }
     let defaults = bundled()?;
@@ -61,6 +63,7 @@ pub(super) fn merge(mut user: Memory) -> Result<Memory> {
         }
     }
     user.defaults_applied = true;
+    super::core_dictionary::apply(&mut user)?;
     Ok(user)
 }
 #[cfg(test)]
@@ -71,10 +74,19 @@ mod tests {
         let expected: Memory =
             serde_json::from_str(include_str!("../../data/learning/ja-ko-natural.json")).unwrap();
         let defaults = bundled().unwrap();
+        let packed = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(
+            include_bytes!("../../data/learning/ja-ko-natural.json.zlib"),
+            MAX_BYTES as usize,
+        )
+        .unwrap();
+        let unpacked: Memory = serde_json::from_slice(&packed).unwrap();
         assert_eq!(
-            serde_json::to_value(&defaults).unwrap(),
+            serde_json::to_value(&unpacked).unwrap(),
             serde_json::to_value(&expected).unwrap()
         );
+        for (source, target) in &expected.sentences {
+            assert_eq!(defaults.lookup(source), Some(target.as_str()));
+        }
         assert_eq!(
             defaults
                 .post_edit("ワーグナーが扉を開けた。", "워그너가 문을 열었다.")

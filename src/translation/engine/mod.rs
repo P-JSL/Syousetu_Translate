@@ -14,6 +14,21 @@ pub trait Translator {
     fn translate_lines(&mut self, lines: &[String]) -> Result<Vec<String>> {
         lines.iter().map(|text| self.translate(text)).collect()
     }
+    fn translate_lines_into(
+        &mut self,
+        lines: &[String],
+        emit: &mut dyn FnMut(usize, &str) -> Result<()>,
+    ) -> Result<()> {
+        let translated = self.translate_lines(lines)?;
+        anyhow::ensure!(
+            translated.len() == lines.len(),
+            "원문과 번역 줄 수가 다릅니다"
+        );
+        for (index, text) in translated.iter().enumerate() {
+            emit(index, text)?;
+        }
+        Ok(())
+    }
 }
 pub struct Passthrough;
 impl Translator for Passthrough {

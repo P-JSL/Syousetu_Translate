@@ -1,3 +1,29 @@
+/// Batched CPU inference can use its caller's bounded Rayon pool. Each range
+/// owns disjoint output elements; the arithmetic inside a tile is unchanged.
+pub(super) fn execute_matmul_tiles(
+    items: usize,
+    (m, k, n): (usize, usize, usize),
+    run: impl Fn(std::ops::Range<usize>) + Sync,
+) {
+    use rayon::prelude::*;
+    let threads = rayon::current_num_threads();
+    if m > 1 && threads > 1 && m.saturating_mul(k).saturating_mul(n) >= 4_000_000 {
+        let chunks = items.min(threads * 4);
+        if chunks == 0 {
+            return;
+        }
+        let width = items.div_ceil(chunks);
+        (0..chunks).into_par_iter().for_each(|index| {
+            let start = index * width;
+            if start < items {
+                run(start..items.min(start + width));
+            }
+        });
+    } else {
+        crate::utils::barrier_pool().execute_chunked(items, run);
+    }
+}
+
 pub(super) fn nearest_int(v: f32) -> i32 {
     v.round() as i32
 }

@@ -1,4 +1,10 @@
-# Direct offline translation (0.3.2)
+# Direct offline translation (0.3.3)
+
+Current CPU batching, 16/32/64-context controls, live TXT semantics and the
+supporting papers are documented in [CPU batching](cpu-batching.md). The default
+is 32 logical contexts on a bounded pool of available CPU threads. A 1,058-entry
+exact-headword glossary is embedded in 9,144 compressed bytes; source and
+regeneration instructions are in [`data/dictionary/`](../data/dictionary/README.md).
 
 The default `internal` engine runs **SMaLL-100 INT8** directly from Japanese to Korean
 in Rust. The source-visible recovery client is retained; neither ezTrans XP's
@@ -34,7 +40,8 @@ different local directory. Defaults are under `%LOCALAPPDATA%\SyousetuTranslate`
 on Windows and `$XDG_DATA_HOME/SyousetuTranslate` (or `~/.local/share`) on Linux.
 The portable release includes the model in `models/ja-ko`. Model inference uses no network
 client; a saved-HTML or local-file translation can run with networking disabled.
-Live novel downloads still need website access. Allow about 1GB of working RAM;
+Live novel downloads still need website access. Allow at least 2GB of free RAM,
+especially with 64 contexts;
 immutable INT8 weights are shared. No original-weight conversion memory is used.
 `download --cache-html-dir PATH` saves the parsed work index as `work.json` and
 each original chapter as `1.html`, `2.html`, etc., for private local verification.
@@ -42,8 +49,9 @@ each original chapter as `1.html`, `2.html`, etc., for private local verificatio
 ## Lightweight adaptation
 
 The **교정 기억** tab stores approved corrections in `corrections.json.zlib`.
-The executable embeds compressed defaults: 60 sentence examples, eight reviewed
-names and six source-qualified spelling corrections. Existing JSON profiles are
+The executable embeds compressed defaults: 1,058 exact headword glosses, 60
+sentence examples, eight reviewed names and six source-qualified spelling
+corrections. Existing JSON profiles are
 still supported. User edits win, and deleted defaults stay deleted after reload.
 Sentence entries match the trimmed original line/segment exactly. Terminology
 entries contain a Japanese source term, an existing Korean expression and a
@@ -76,13 +84,16 @@ The reference is `P-JSL/gacha_pickup_calculator` commit
 `762038180135a2adcaf941f899e78db4fcee89aa`, especially `feedback/runner.rs` and
 `app/compute.rs`. The adapted parts are:
 
-* A single CPU budget, capped at eight, divided between at most four active runners.
+* One shared Rayon compute pool, capped by available CPUs and a maximum budget
+  of 64, serves 1–64 logical contexts (default 32).
 * Shared immutable quantized weights; each runner owns its decoder/cross-attention
   caches. KV state resets after every segment, including failed generation.
-* Disjoint preallocated output slots and ordered joins; completion order cannot
-  reorder lines. Empty and duplicate lines are retained.
-* Every submitted task is joined on error. Missing/failed results prevent saving;
-  existing output remains intact through the atomic writer.
+* Iteration-level refilling batches common linear operations while keeping
+  attention and KV state private. Ordered result slots preserve empty and
+  duplicate lines regardless of completion order.
+* Missing/failed results terminate the job. Completed contiguous translations
+  remain in the final TXT; an overwritten original remains in `.backup` on
+  failure. Settings, cache metadata and correction memory still use atomic writes.
 
 Probability convolution, FFT, random seeds and Monte Carlo aggregation are not
 translation algorithms and were not copied. Neural matrix operations are
@@ -116,8 +127,8 @@ For a complete saved Kakuyomu novel with `--japanese` and the default title
 format, independently check chapter order and every original/translation pair:
 
 ```sh
-python scripts/validate_kakuyomu_bilingual.py --source-dir /path/to/cached-html \
-  --output novel.txt --chapters 35 --report completeness.json
+cargo run --locked --release --no-default-features --example verify_saved_novel \
+  -- /path/to/cached-html novel.txt 35
 ```
 
 This checker compares all original lines, including empty/duplicate lines and
@@ -132,7 +143,8 @@ shared Q8_0 embeddings/output head, greedy decoding, special-token suppression
 and repeated-trigram blocking. Long input is split at Unicode-safe boundaries,
 preferring punctuation. A generation length failure retries smaller source
 segments with a bounded recursion depth. Input is never silently truncated to
-the model limit; unrecoverable generation fails without saving partial output.
+the model limit; unrecoverable generation fails and preserves the already
+written contiguous prefix without inserting an untranslated replacement.
 
 Q8 conversion and decoding guards can change results relative to the original
 floating-point, five-beam model. This small multilingual model can mistranslate

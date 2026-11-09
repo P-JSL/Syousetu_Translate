@@ -1,0 +1,66 @@
+{
+  "version": "0.3.3",
+  "date_utc": "2026-11-09",
+  "reference_commit": "33524c271b07fde4b8ba7cf653e366a28c379254",
+  "candidate_cli_sha256": "0dd23493c3edefee356f3bcc392ab17134961ae7fd8a60f580a72730fbb82f4a",
+  "platform": {
+    "cpu": "AMD EPYC 9V45",
+    "cpu_quota": 4,
+    "target": "x86_64-unknown-linux-gnu",
+    "rustc": "1.99.1",
+    "features": [
+      "offline-model"
+    ],
+    "target_cpu_native": false
+  },
+  "protocol": {
+    "timing": "full process including model verification/loading, parsing, translation and bilingual TXT save",
+    "cached_html": true,
+    "network_in_timing": false,
+    "learning": false,
+    "initial_result_cache": "empty",
+    "parallel_mode": "parallel",
+    "vocabulary": "full",
+    "reference_requested_workers": 16,
+    "reference_effective_contexts": 4,
+    "candidate_contexts": 64,
+    "candle_num_threads": 1,
+    "repetitions_per_case": 1,
+    "semantic_accuracy_certified": false
+  },
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "works": [
+    {
+      "url": "https://kakuyomu.jp/works/11054822663814504924",
+      "start": 1,
+      "end": 35,
+      "reference_seconds": 163.110703742,
+      "candidate_seconds": 79.13806541,
+      "reduction_percent": 51.48199131359493,
+      "reference_peak_rss_kib": 834136,
+      "candidate_peak_rss_kib": 1127240,
+      "byte_identical": true,
+      "output_bytes": 627825,
+      "output_sha256": "28966275a6b45b95bb12a182ac1fc431113c047193fe066b021fd9db537aa317",
+      "verified_source_lines": 15123,
+      "nonempty_source_lines": 3354,
+      "korean_lines": 3297
+    },
+    {
+      "url": "https://kakuyomu.jp/works/16818622176193367283",
+      "start": 1,
+      "end": 24,
+      "reference_seconds": 263.901530639,
+      "candidate_seconds": 107.233526365,
+      "reduction_percent": 59.36608396876317,
+      "reference_peak_rss_kib": 815576,
+      "candidate_peak_rss_kib": 1069312,
+      "byte_identical": true,
+      "output_bytes": 994979,
+      "output_sha256": "71d7501ec4c2d2c027c0bc0f63d3a644c28d573578e7f8533483269d0946f202",
+      "verified_source_lines": 42566,
+      "nonempty_source_lines": 8533,
+      "korean_lines": 8457
+    }
+  ]
+}

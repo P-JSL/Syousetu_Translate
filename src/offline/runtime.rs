@@ -2,7 +2,10 @@ use crate::{learning::Memory, models};
 use anyhow::{bail, Result};
 use std::{fs, path::Path, sync::Arc};
 
-use super::{model, runner::Runner, tokenizer::Tokenizer, OfflineTranslator, ParallelPolicy};
+use super::{
+    model, runner::Runner, tokenizer::Tokenizer, OfflineTranslator, ParallelPolicy,
+    VocabularyPolicy,
+};
 impl OfflineTranslator {
     pub fn builder(root: &Path) -> super::TranslatorBuilder {
         super::TranslatorBuilder::new(root)
@@ -19,6 +22,7 @@ impl OfflineTranslator {
         Self::builder(root)
             .memory(memory)
             .cpu_budget(super::CpuBudget::from_requested(threads))
+            .workers(threads)
             .parallel_policy(policy)
             .build()
     }
@@ -27,6 +31,8 @@ impl OfflineTranslator {
         memory: Memory,
         budget: super::CpuBudget,
         policy: ParallelPolicy,
+        workers: usize,
+        vocabulary_policy: VocabularyPolicy,
     ) -> Result<Self> {
         if usize::BITS < 64 {
             bail!("내부 모델은 64비트 실행 파일이 필요합니다");
@@ -37,8 +43,11 @@ impl OfflineTranslator {
         let config: model::Config =
             serde_json::from_slice(&fs::read(directory.join("config.json"))?)?;
         let tokenizer = Arc::new(Tokenizer::open(&directory)?);
-        let budget = budget.get();
-        let count = budget.min(4);
+        let available = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1);
+        let budget = budget.get().min(available);
+        let count = workers.clamp(1, 64);
         let load_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .num_threads(budget)
@@ -53,32 +62,29 @@ impl OfflineTranslator {
         })?;
         let memory = Arc::new(memory);
         let mut runners = Vec::new();
-        // Immutable quantized weights are shared; per-runner CPU pools sum to
-        // the total budget. This avoids nested unlimited worker pools.
-        for index in 0..count {
-            let threads = budget / count + usize::from(index < budget % count);
+        // Logical contexts share a single bounded compute pool. More contexts
+        // improve batching without creating a thread pool for every context.
+        for _ in 0..count {
             runners.push(Runner::new(
                 model.clone(),
                 config.clone(),
                 Arc::clone(&tokenizer),
                 Arc::clone(&memory),
-                Arc::new(
-                    rayon::ThreadPoolBuilder::new()
-                        .num_threads(threads)
-                        .build()?,
-                ),
+                Arc::clone(&load_pool),
             ));
         }
         eprintln!("직접 일→한 모델 준비 완료 · 작업자 {count}개 / CPU {budget}개 · 교정 문장 {}개 / 용어 {}개",memory.sentences.len(),memory.terms.len());
         Ok(Self {
+            vocabulary_policy,
             runners,
+            compute_pool: Arc::clone(&load_pool),
             cache: super::cache::Cache::default(),
             single_pool: if budget == 1 {
                 load_pool
             } else {
                 Arc::new(rayon::ThreadPoolBuilder::new().num_threads(1).build()?)
             },
-            parallel: if budget == 1 || policy == ParallelPolicy::Serial {
+            parallel: if count == 1 || policy == ParallelPolicy::Serial {
                 Some(false)
             } else if policy == ParallelPolicy::Parallel {
                 Some(true)
@@ -88,6 +94,29 @@ impl OfflineTranslator {
         })
     }
     pub fn translate(&mut self, text: &str) -> Result<String> {
+        if self.vocabulary_policy != VocabularyPolicy::Full {
+            self.prepare_vocabulary(&[text.to_owned()])?;
+        }
+        self.translate_prepared(text)
+    }
+    pub(super) fn prepare_vocabulary(&mut self, lines: &[String]) -> Result<()> {
+        if self.vocabulary_policy == VocabularyPolicy::Full
+            || !lines.iter().any(|source| {
+                super::text::japanese(source) && !self.runners[0].has_correction(source)
+            })
+        {
+            return Ok(());
+        }
+        let Some(head) = self.runners[0].head_for_sources(lines)? else {
+            return Ok(());
+        };
+        for runner in &mut self.runners {
+            runner.install_head(Arc::clone(&head));
+        }
+        self.cache = super::cache::Cache::default();
+        Ok(())
+    }
+    pub(super) fn translate_prepared(&mut self, text: &str) -> Result<String> {
         // The CPU budget is a cap. Short decode operations often run faster
         // with one CPU than with nested matrix parallelism.
         let pool = Arc::clone(&self.single_pool);

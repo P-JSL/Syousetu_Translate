@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Transformers v4.46.3; numerical operations unchanged.
+mod batch;
 use super::ops::{layer_norm, LayerNorm};
 use crate::int8::Weights;
 use candle_core::{quantized::QMatMul, Module, Result, Tensor};
@@ -91,10 +92,20 @@ impl Attention {
             };
             (q, k, v)
         };
-        let q = (q * (self.head_dim as f64).powf(-0.5))?;
         if cache {
             self.cache = Some((k.clone(), v.clone()));
         }
+        self.out.forward(&self.context(q, k, v, length, mask)?)
+    }
+    fn context(
+        &self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        length: usize,
+        mask: Option<&Tensor>,
+    ) -> Result<Tensor> {
+        let q = (q * (self.head_dim as f64).powf(-0.5))?;
         let scores = q.matmul(&k.transpose(1, 2)?)?;
         let scores = match mask {
             Some(mask) => scores.broadcast_add(mask)?,
@@ -106,7 +117,7 @@ impl Attention {
             .transpose(1, 2)?
             .contiguous()?
             .reshape((1, length, self.heads * self.head_dim))?;
-        self.out.forward(&context)
+        Ok(context)
     }
 }
 #[derive(Clone)]

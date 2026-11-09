@@ -1,6 +1,7 @@
 //! Small, user-approved translation memory. This never trains model weights or
 //! accepts generated translations as verified corrections.
 mod bootstrap;
+mod core_dictionary;
 pub mod import;
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
@@ -26,6 +27,8 @@ pub struct Memory {
     version: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     defaults_applied: bool,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    dictionary_revision: u32,
     pub sentences: BTreeMap<String, String>,
     pub terms: Vec<Term>,
 }
@@ -34,10 +37,14 @@ impl Default for Memory {
         Self {
             version: 1,
             defaults_applied: false,
+            dictionary_revision: 0,
             sentences: BTreeMap::new(),
             terms: Vec::new(),
         }
     }
+}
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 pub fn default_path() -> PathBuf {
     std::env::var_os("SYOUSETU_MEMORY_PATH")
@@ -202,14 +209,17 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("syousetu-memory-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let p = dir.join("memory.json");
-        Memory::edit(&p, |m| m.learn("猫", "고양이")).unwrap();
-        Memory::edit(&p, |m| m.learn("犬", "개")).unwrap();
+        Memory::edit(&p, |m| m.learn("庭の白い猫", "정원의 하얀 고양이")).unwrap();
+        Memory::edit(&p, |m| m.learn("隣の黒い犬", "이웃의 검은 개")).unwrap();
         assert_eq!(
             Memory::load(&p).unwrap().sentences.len(),
             Memory::bundled().unwrap().sentences.len() + 2
         );
         assert!(Memory::edit(&p, |m| m.learn("", "bad")).is_err());
-        assert_eq!(Memory::load(&p).unwrap().lookup("猫"), Some("고양이"));
+        assert_eq!(
+            Memory::load(&p).unwrap().lookup("庭の白い猫"),
+            Some("정원의 하얀 고양이")
+        );
         fs::write(&p, "{broken").unwrap();
         assert!(Memory::edit(&p, |m| m.learn("猫", "덮어쓰기")).is_err());
         assert_eq!(fs::read_to_string(&p).unwrap(), "{broken");

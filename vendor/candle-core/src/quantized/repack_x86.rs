@@ -204,7 +204,7 @@ mod kernels {
     use core::arch::x86_64::*;
 
     // acc[m][16] f32 for up to MT activation rows against one 16-row weight tile
-    pub(crate) const MAX_MT: usize = 4;
+    pub(crate) const MAX_MT: usize = 8;
 
     #[inline(always)]
     unsafe fn bcast4(act: &[i8], off: usize) -> __m512i {
@@ -313,6 +313,62 @@ mod kernels {
             }
         }
     }
+
+    // Fixed-size Q8 register blocks remove dynamic row loops and repeated
+    // accumulator loads. The block/FMA order for each output stays identical
+    // to q8_0_tile2, including the unsigned-weight offset correction.
+    #[target_feature(enable = "avx512f,avx512vnni,avx512bw")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) unsafe fn q8_0_unit<const MT: usize>(
+        tiles: &[TileQ8_0],
+        lhs_q: &[BlockQ8K],
+        kb: usize,
+        nt: usize,
+        m0: usize,
+        dst: *mut f32,
+        n: usize,
+    ) {
+        let mut acc = [_mm512_setzero_ps(); MT];
+        for b in 0..kb {
+            let acts: [&BlockQ8K; MT] = std::array::from_fn(|r| &lhs_q[(m0 + r) * kb + b]);
+            for sub in (0..8).step_by(2) {
+                let ta = &tiles[nt * kb * 8 + b * 8 + sub];
+                let tb = &tiles[nt * kb * 8 + b * 8 + sub + 1];
+                let mut ia = [_mm512_setzero_si512(); MT];
+                let mut ib = [_mm512_setzero_si512(); MT];
+                for g in 0..8 {
+                    let wa = _mm512_loadu_si512(ta.qs.as_ptr().add(g * TILE_N * 4) as *const _);
+                    let wb = _mm512_loadu_si512(tb.qs.as_ptr().add(g * TILE_N * 4) as *const _);
+                    for r in 0..MT {
+                        ia[r] =
+                            _mm512_dpbusd_epi32(ia[r], wa, bcast4(&acts[r].qs, sub * 32 + g * 4));
+                        ib[r] = _mm512_dpbusd_epi32(
+                            ib[r],
+                            wb,
+                            bcast4(&acts[r].qs, (sub + 1) * 32 + g * 4),
+                        );
+                    }
+                }
+                for (s, sums, tile) in [(sub, &ia, ta), (sub + 1, &ib, tb)] {
+                    let dw = _mm512_cvtph_ps(_mm256_loadu_si256(tile.d.as_ptr() as *const _));
+                    for r in 0..MT {
+                        let sum =
+                            (acts[r].bsums[s * 2] as i32 + acts[r].bsums[s * 2 + 1] as i32) as f32;
+                        let value =
+                            _mm512_sub_ps(_mm512_cvtepi32_ps(sums[r]), _mm512_set1_ps(128.0 * sum));
+                        acc[r] = _mm512_fmadd_ps(
+                            value,
+                            _mm512_mul_ps(dw, _mm512_set1_ps(acts[r].d)),
+                            acc[r],
+                        );
+                    }
+                }
+            }
+        }
+        for r in 0..MT {
+            _mm512_storeu_ps(dst.add((m0 + r) * n + nt * TILE_N), acc[r]);
+        }
+    }
 }
 
 // Full matmul over the packed tiles: lhs is m rows already quantized to BlockQ8K,
@@ -333,6 +389,20 @@ unsafe fn matmul_unit_512(
     n: usize,
 ) {
     use core::arch::x86_64::*;
+    if let PackedX86::Q8_0(tiles) = packed {
+        match mt {
+            1 => kernels::q8_0_unit::<1>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            2 => kernels::q8_0_unit::<2>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            3 => kernels::q8_0_unit::<3>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            4 => kernels::q8_0_unit::<4>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            5 => kernels::q8_0_unit::<5>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            6 => kernels::q8_0_unit::<6>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            7 => kernels::q8_0_unit::<7>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            8 => kernels::q8_0_unit::<8>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            _ => unreachable!("Q8 row tile exceeds MAX_MT"),
+        }
+        return;
+    }
     let mut act_refs: [&BlockQ8K; kernels::MAX_MT] = [&lhs_q[m0 * kb]; kernels::MAX_MT];
     let mut acc = [[_mm512_setzero_ps(); 1]; kernels::MAX_MT];
     for b in 0..kb {
@@ -435,11 +505,15 @@ pub(crate) fn matmul_tiles(
         let lv = level().expect("select() gated");
         let kb = k / QK_K;
         let n_tiles = n / TILE_N;
-        let mt_step = kernels::MAX_MT;
+        let mt_step = if matches!(packed, PackedX86::Q8_0(_)) && n >= 16_384 {
+            kernels::MAX_MT
+        } else {
+            4
+        };
         let dst_ptr = dst.as_mut_ptr() as usize;
         let total_units = n_tiles * m.div_ceil(mt_step);
         let m_units = m.div_ceil(mt_step);
-        crate::utils::barrier_pool().execute_chunked(total_units, |range| {
+        super::utils::execute_matmul_tiles(total_units, (m, k, n), |range| {
             let dst_ptr = dst_ptr as *mut f32;
             for unit in range {
                 let nt = unit / m_units;
@@ -496,7 +570,7 @@ pub(crate) fn quantize_lhs(lhs: &[f32], m: usize, k: usize) -> Vec<BlockQ8K> {
         return out;
     }
     let out_ptr = out.as_mut_ptr() as usize;
-    crate::utils::barrier_pool().execute_chunked(m, |range| {
+    super::utils::execute_matmul_tiles(m, (m, k, QK_K), |range| {
         let out_ptr = out_ptr as *mut BlockQ8K;
         for r in range {
             let row = &lhs[r * k..(r + 1) * k];

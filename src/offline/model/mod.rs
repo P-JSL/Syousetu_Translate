@@ -11,10 +11,12 @@ mod layers;
 #[allow(unsafe_code)]
 mod ops;
 use self::ops::{layer_norm, LayerNorm};
+use super::vocabulary::Head;
 use crate::int8::Weights;
 use candle_core::{quantized::QMatMul, DType, Device, IndexOp, Module, Result, Tensor};
 pub(super) use config::Config;
 use layers::Layer;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Model {
@@ -25,6 +27,7 @@ pub struct Model {
     encoder_norm: LayerNorm,
     decoder: Vec<Layer>,
     decoder_norm: LayerNorm,
+    head: Option<Arc<Head>>,
 }
 impl Model {
     pub fn new(cfg: &Config, vb: Weights) -> Result<Self> {
@@ -60,6 +63,7 @@ impl Model {
             .map(|i| Layer::new(cfg, true, vb.pp(format!("decoder.layers.{i}"))))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
+            head: None,
             config: cfg.clone(),
             shared,
             positions,
@@ -85,6 +89,24 @@ impl Model {
             &self
                 .positions
                 .narrow(0, past + 2, ids.len())?
+                .unsqueeze(0)?,
+        )
+    }
+    fn embed_rows(&self, ids: &[u32], positions: &[u32]) -> Result<Tensor> {
+        let x = self
+            .shared
+            .embedding(&Tensor::new(ids, &Device::Cpu)?)?
+            .to_dtype(DType::F32)?
+            .unsqueeze(0)?;
+        let x = if self.config.scale_embedding {
+            (x * (self.config.d_model as f64).sqrt())?
+        } else {
+            x
+        };
+        x.broadcast_add(
+            &self
+                .positions
+                .index_select(&Tensor::new(positions, &Device::Cpu)?, 0)?
                 .unsqueeze(0)?,
         )
     }
@@ -125,11 +147,74 @@ impl Model {
             .apply(&self.decoder_norm)?
             .i((0, length - 1))?
             .unsqueeze(0)?;
-        self.shared.forward(&last)?.squeeze(0)
+        self.project(&last)?.squeeze(0)
     }
     pub fn reset(&mut self) {
         for layer in self.encoder.iter_mut().chain(self.decoder.iter_mut()) {
             layer.reset();
         }
+    }
+
+    pub fn encode_many(&self, sources: &[Vec<u32>]) -> Result<Vec<Tensor>> {
+        let mut start = 0;
+        let segments = sources
+            .iter()
+            .map(|source| {
+                let segment = (start, source.len());
+                start += source.len();
+                segment
+            })
+            .collect::<Vec<_>>();
+        let ids = sources.iter().flatten().copied().collect::<Vec<_>>();
+        let positions = sources
+            .iter()
+            .flat_map(|source| (2..source.len() + 2).map(|position| position as u32))
+            .collect::<Vec<_>>();
+        let mut x = self.embed_rows(&ids, &positions)?;
+        for layer in &self.encoder {
+            x = layer.encode_segments(&x, &segments)?;
+        }
+        let x = x.apply(&self.encoder_norm)?;
+        segments
+            .iter()
+            .map(|&(start, length)| x.narrow(1, start, length))
+            .collect()
+    }
+
+    pub fn decode_many(
+        models: &mut [&mut Self],
+        inputs: &[u32],
+        past: &[usize],
+        encoders: &[Tensor],
+    ) -> Result<Tensor> {
+        let positions = past
+            .iter()
+            .map(|position| (position + 2) as u32)
+            .collect::<Vec<_>>();
+        let mut x = models[0].embed_rows(inputs, &positions)?;
+        for index in 0..models[0].decoder.len() {
+            let mut layers = models
+                .iter_mut()
+                .map(|model| &mut model.decoder[index])
+                .collect::<Vec<_>>();
+            x = Layer::decode_rows(&mut layers, &x, encoders)?;
+        }
+        let last = x.apply(&models[0].decoder_norm)?.squeeze(0)?;
+        models[0].project(&last)
+    }
+    fn project(&self, x: &Tensor) -> Result<Tensor> {
+        match &self.head {
+            Some(head) => head.matrix.forward(x),
+            None => self.shared.forward(x),
+        }
+    }
+    pub(super) fn head_ids(&self) -> Option<&[u32]> {
+        self.head.as_ref().map(|head| head.ids.as_slice())
+    }
+    pub(super) fn prepare_head(&self, ids: Vec<u32>) -> Result<Arc<Head>> {
+        Head::gather(&self.shared, ids)
+    }
+    pub(super) fn install_head(&mut self, head: Arc<Head>) {
+        self.head = Some(head);
     }
 }

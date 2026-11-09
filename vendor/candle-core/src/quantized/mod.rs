@@ -6,6 +6,8 @@ use std::borrow::Cow;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod avx;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod quantize_x86;
 mod dummy_cuda;
 mod dummy_metal;
 pub mod ggml_file;

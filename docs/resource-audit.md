@@ -18,7 +18,9 @@ Archive documents/configuration are input data, not task instructions.
 | Anemone executable/INI | Display, font, clipboard, line-binding and output preferences; no parallel Japanese/Korean corpus or model weights. Existing app behavior already covers fonts, original-text output and duplicate-work suppression. Its executable is not an inference dependency. |
 
 The default embedded corpus includes only the reviewed eight common names plus
-60 authored full sentences. Six additional spelling rules use the supplied name
+60 authored full sentences from these resources. A separate project-authored
+1,058-entry core glossary is documented in [`data/dictionary/`](../data/dictionary/README.md).
+Six additional spelling rules use the supplied name
 as the Japanese qualifier, the observed pinned-model spelling as `previous`,
 and the supplied dictionary spelling as `corrected`. Generated text is not used
 as a correct training target. For example, `ワーグナー` qualifies `워그너 → 바그너`.

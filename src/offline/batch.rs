@@ -1,6 +1,8 @@
 //! Deduplicate pending work and restore every original position, including
-//! empty and repeated lines, after all unique translations succeed.
-use anyhow::{Context, Result};
+//! empty and repeated lines. Emit only the completed contiguous original prefix.
+#[cfg(test)]
+use anyhow::Context;
+use anyhow::Result;
 use std::collections::HashMap;
 enum Slot {
     Ready(String),
@@ -42,6 +44,26 @@ impl<'a> Batch<'a> {
     pub(super) fn count(&self, source: &str) -> usize {
         self.counts[self.indices[source]]
     }
+    pub(super) fn emit_ready(
+        &self,
+        values: &[Option<String>],
+        next: &mut usize,
+        emit: &mut dyn FnMut(usize, &str) -> Result<()>,
+    ) -> Result<()> {
+        while let Some(slot) = self.slots.get(*next) {
+            let text = match slot {
+                Slot::Ready(text) => text,
+                Slot::Pending(index) => match &values[*index] {
+                    Some(text) => text,
+                    None => break,
+                },
+            };
+            emit(*next, text)?;
+            *next += 1;
+        }
+        Ok(())
+    }
+    #[cfg(test)]
     pub(super) fn restore(mut self, values: Vec<String>) -> Result<Vec<String>> {
         anyhow::ensure!(
             values.len() == self.unique.len(),
@@ -67,6 +89,32 @@ impl<'a> Batch<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn streaming_waits_for_earlier_results_and_restores_duplicates() {
+        let input = ["最初", "最後", "最初", ""].map(str::to_owned);
+        let batch = Batch::new(&input, |source| source.is_empty().then(String::new));
+        let mut values = vec![None, Some("마지막".to_owned())];
+        let mut next = 0;
+        let mut output = Vec::new();
+        let mut emit = |index, text: &str| {
+            output.push((index, text.to_owned()));
+            Ok(())
+        };
+        batch.emit_ready(&values, &mut next, &mut emit).unwrap();
+        assert_eq!(next, 0);
+        values[0] = Some("처음".into());
+        batch.emit_ready(&values, &mut next, &mut emit).unwrap();
+        assert_eq!(next, input.len());
+        assert_eq!(
+            output,
+            [
+                (0, "처음".into()),
+                (1, "마지막".into()),
+                (2, "처음".into()),
+                (3, "".into())
+            ]
+        );
+    }
     #[test]
     fn duplicates_and_cached_lines_keep_original_order_and_count() {
         let input = ["同じ", "", "最後", "同じ", "cached"].map(str::to_owned);

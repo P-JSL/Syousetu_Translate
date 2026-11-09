@@ -13,6 +13,11 @@ pub fn settings(args: &[String]) -> Result<Config> {
     };
     for (positive, negative, field) in [
         ("--japanese", "--no-japanese", &mut cfg.print_japanese),
+        (
+            "--fast-vocabulary",
+            "--full-vocabulary",
+            &mut cfg.fast_vocabulary,
+        ),
         ("--furigana", "--no-furigana", &mut cfg.include_furigana),
         (
             "--include-comments",
@@ -61,8 +66,8 @@ pub fn settings(args: &[String]) -> Result<Config> {
     }
     if value(args, "--jobs").is_some() {
         let jobs = num(args, "--jobs", 1)?;
-        if !(1..=16).contains(&jobs) {
-            bail!("--jobs는 1~16이어야 합니다");
+        if !(1..=64).contains(&jobs) {
+            bail!("--jobs는 1~64이어야 합니다");
         }
         cfg.max_cpu_core_count = jobs as isize;
     }
@@ -101,6 +106,8 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--ca-bundle",
     ];
     let common_flags = [
+        "--fast-vocabulary",
+        "--full-vocabulary",
         "--japanese",
         "--no-japanese",
         "--passthrough",

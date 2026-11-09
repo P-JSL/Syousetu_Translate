@@ -90,12 +90,17 @@ pub(super) fn engine_from_args(
                 crate::learning::Memory::default()
             };
             return Ok(Box::new(Internal {
-                engine: crate::offline::OfflineTranslator::open_with_policy(
-                    &config.model_directory(),
-                    memory,
-                    config.workers(),
-                    config.parallel_mode.parse()?,
-                )?,
+                engine: crate::offline::OfflineTranslator::builder(&config.model_directory())
+                    .memory(memory)
+                    .workers(config.workers())
+                    .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
+                    .parallel_policy(config.parallel_mode.parse()?)
+                    .vocabulary_policy(if config.fast_vocabulary {
+                        crate::offline::VocabularyPolicy::KoreanShortlist
+                    } else {
+                        crate::offline::VocabularyPolicy::Full
+                    })
+                    .build()?,
                 progress: flag(args, "--progress-json"),
             }));
         }
@@ -209,6 +214,16 @@ impl engine::Translator for Internal {
         self.engine.translate_lines_with_progress(lines,|done,total| {
             if progress {eprintln!("{}",serde_json::json!({"event":"progress","done":done,"total":total,"unit":"lines"}));}
         })
+    }
+    fn translate_lines_into(
+        &mut self,
+        lines: &[String],
+        emit: &mut dyn FnMut(usize, &str) -> Result<()>,
+    ) -> Result<()> {
+        let progress = self.progress;
+        self.engine.translate_lines_to(lines, |done,total| {
+            if progress {eprintln!("{}", serde_json::json!({"event":"progress","done":done,"total":total,"unit":"lines"}));}
+        }, emit)
     }
 }
 pub(super) fn local_session(args: &[String], config: &Config) -> Result<Session> {

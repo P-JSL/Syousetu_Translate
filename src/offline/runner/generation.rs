@@ -5,6 +5,19 @@ impl Runner {
     pub(super) fn generate(&mut self, text: &str, tokens: &[u32]) -> Result<String> {
         self.generate_at(text, tokens, 0)
     }
+    pub(super) fn recover_after_limit(&mut self, text: &str, limit: usize) -> Result<String> {
+        self.model.reset();
+        if text.chars().count() >= 16 {
+            if let Some(boundary) = split_boundary(text) {
+                let first_tokens = self.tokenizer.encode(&text[..boundary])?;
+                let first = self.generate_at(&text[..boundary], &first_tokens, 1)?;
+                let last_tokens = self.tokenizer.encode(&text[boundary..])?;
+                let last = self.generate_at(&text[boundary..], &last_tokens, 1)?;
+                return Ok(format!("{} {}", first.trim(), last.trim()));
+            }
+        }
+        Err(GenerationLimit(limit).into())
+    }
     fn generate_at(&mut self, text: &str, tokens: &[u32], depth: usize) -> Result<String> {
         self.model.reset();
         let result = self.generate_inner(text, tokens);
@@ -45,11 +58,12 @@ impl Runner {
             let scores = self.model.decode(&input, &encoder, past)?;
             past += input.len();
             let blocked = repeated_trigram_tokens(&output);
-            let next = super::selection::select_logits(
+            let next = super::selection::select_logits_mapped(
                 &scores,
                 self.tokenizer.vocab.len(),
                 self.config.eos_token_id,
                 &blocked,
+                self.model.head_ids(),
             )?;
             if next == self.config.eos_token_id {
                 let decoded = self.tokenizer.decode(&output)?;

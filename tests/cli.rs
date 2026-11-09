@@ -124,7 +124,7 @@ fn parallel_translation_matches_sequential_with_dictionary_and_bilingual_lines()
     assert_eq!(w.read("source.txt"), source);
 }
 #[test]
-fn worker_failure_preserves_existing_output_and_source() {
+fn worker_failure_preserves_translated_prefix_original_backup_and_source() {
     let w = Workspace::new();
     w.write("source.txt", "こんにちは\n未知語彙\n");
     w.write("out.txt", "keep existing output");
@@ -141,7 +141,8 @@ fn worker_failure_preserves_existing_output_and_source() {
         ])
         .status
         .success());
-    assert_eq!(w.read("out.txt"), "keep existing output");
+    assert_eq!(w.read("out.backup"), "keep existing output");
+    assert!(!w.read("out.txt").is_empty());
     assert_eq!(w.read("source.txt"), "こんにちは\n未知語彙\n");
 }
 #[test]

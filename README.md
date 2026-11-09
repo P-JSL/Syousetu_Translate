@@ -1,6 +1,6 @@
 # Syousetu Translate — Rust migration
 
-**v0.3.2: Modular Rust core, faster translation and bundled compressed corrections. Windows x64 portable release; Linux x64 source builds.**
+**v0.3.3: Batched Rust CPU inference, 32 default translation contexts, live TXT output and a compressed Japanese–Korean core glossary. Windows x64 portable release; Linux x64 source builds.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 
@@ -24,12 +24,33 @@ mistranslate fiction, names and slang; it does not reproduce ezTrans output.
 
 The current source separates CLI, desktop views, parsing, inference, model
 lifecycle, correction storage and optional compatibility code into domain folders.
-It embeds 68 default sentence/name corrections and six source-qualified spelling
-rules in 2,424 compressed bytes. New personal profiles use `corrections.json.zlib`;
+It embeds 1,058 authored Japanese–Korean headword glosses in 9,144 compressed
+bytes, plus 68 sentence/name corrections and six source-qualified spelling rules
+in 2,424 compressed bytes. Exact headwords keep their representative dictionary
+meanings; full sentences retain neural context. New personal profiles use `corrections.json.zlib`;
 existing JSON profiles remain supported. Windows defaults to
 `C:\Users\rabbit\OneDrive\문서` for automatic output and save dialogs.
 See [architecture and invariants](docs/architecture.md) and the
 [supplied dictionary audit/import guide](docs/resource-audit.md).
+
+The internal engine defaults to 32 logical translation contexts; `--jobs 16`,
+`--jobs 32` and `--jobs 64` select the batch capacity. A shared Rayon pool caps
+actual compute threads at the available CPU budget. Attention/KV state stays
+private while encoder/decoder linear operations run in shared batches. Output
+appears directly at its `.txt` path and is flushed as ordered translations arrive.
+Interrupted jobs retain their translated prefix and any original-file backup.
+See [CPU batching, research and validation](docs/cpu-batching.md).
+
+On the recorded four-CPU benchmark, full vocabulary with
+`--parallel-mode parallel --jobs 64` reduced complete 35/24-chapter runs by
+**51.5% / 59.4%** versus v0.3.2, with byte-identical bilingual TXT. Default
+capacity remains 32; select 64 for the measured profile. Hardware/input affect
+speed and memory use. Both complete outputs passed source-pair verification.
+
+An optional **Korean-focused fast vocabulary** limits output projection candidates
+to Korean/punctuation and source-name pieces. It can change translations and is
+disabled by default. Enable it in settings or with `--fast-vocabulary`; use
+`--full-vocabulary` for the original complete output vocabulary.
 
 Both user-provided ZIPs were downloaded and checked against their SHA-256
 records on 2026-11-03. Their client differences, Rust module mapping, and
@@ -227,7 +248,7 @@ The original Alphapolis Java parser loses DOM markup by calling `Jsoup.parse(tbo
 - HTML parsing and legacy Kakuyomu `__NEXT_DATA__` JSON fallback
 - DOM-based chapter extraction and ruby pronunciation handling
 - HTTP timeouts, bounded retries, clear restriction errors, basic request throttling
-- UTF-8 and UTF-16(BOM) file input, separate atomic output file
+- UTF-8 and UTF-16(BOM) file input, live ordered TXT output with original-file backup
 - Aho–Corasick dictionary replacement, hangul particle selection and bracket/emoji preservation
 - Dynamic loading of a user-provided Windows ezTrans DLL (original J2K ABI), in a 32-bit compatible process
 - CI unit tests and builds on Linux/Windows

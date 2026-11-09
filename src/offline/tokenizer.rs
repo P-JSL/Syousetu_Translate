@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use sentencepiece_rs::SentencePieceProcessor;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, path::Path, sync::OnceLock};
 
 use super::text::split_boundary;
 pub(super) struct Tokenizer {
@@ -9,6 +9,7 @@ pub(super) struct Tokenizer {
     inverse: Vec<Option<String>>,
     pub(super) ja: u32,
     pub(super) ko: u32,
+    fast_base: OnceLock<Vec<u32>>,
 }
 impl Tokenizer {
     pub(super) fn open(root: &Path) -> Result<Self> {
@@ -30,6 +31,7 @@ impl Tokenizer {
             inverse,
             ja: size + 42,
             ko: size + 48,
+            fast_base: OnceLock::new(),
         })
     }
     pub(super) fn encode(&self, text: &str) -> Result<Vec<u32>> {
@@ -39,6 +41,31 @@ impl Tokenizer {
             .iter()
             .map(|p| self.vocab.get(p).copied().unwrap_or(3))
             .collect())
+    }
+    pub(super) fn shortlist(&self, sources: &[String]) -> Result<Vec<u32>> {
+        let mut ids = self
+            .fast_base
+            .get_or_init(|| {
+                self.vocab
+                    .iter()
+                    .filter(|(piece, _)| super::vocabulary::base_piece(piece))
+                    .map(|(_, &id)| id)
+                    .collect()
+            })
+            .clone();
+        ids.push(2);
+        for source in sources {
+            ids.extend(self.encode(source)?);
+            extend_source_ids(&self.vocab, source, &mut ids);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        // Keep the existing packed Q8 arithmetic path. Padding uses BOS rows,
+        // which greedy selection excludes after mapping back to original IDs.
+        while !ids.len().is_multiple_of(16) {
+            ids.push(0);
+        }
+        Ok(ids)
     }
     pub(super) fn decode(&self, ids: &[u32]) -> Result<String> {
         let pieces = ids
@@ -65,7 +92,56 @@ impl Tokenizer {
     }
 }
 
+// Preserve alternate source-name subwords, including long Latin names and
+// Japanese copy fragments. Encoded IDs above cover pieces longer than 16 chars.
+fn extend_source_ids(vocab: &HashMap<String, u32>, source: &str, ids: &mut Vec<u32>) {
+    let mut boundaries = source
+        .char_indices()
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    boundaries.push(source.len());
+    let mut prefixed = String::with_capacity(80);
+    for start in 0..boundaries.len().saturating_sub(1) {
+        for end in start + 1..=(start + 16).min(boundaries.len() - 1) {
+            let part = &source[boundaries[start]..boundaries[end]];
+            if let Some(&id) = vocab.get(part) {
+                ids.push(id);
+            }
+            prefixed.clear();
+            prefixed.push('▁');
+            prefixed.push_str(part);
+            if let Some(&id) = vocab.get(&prefixed) {
+                ids.push(id);
+            }
+        }
+    }
+}
+
 pub(super) struct EncodedText {
     pub(super) text: String,
     pub(super) tokens: Vec<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn alternate_source_pieces_preserve_names_without_adding_unrelated_words() {
+        let vocab = [
+            ("▁Alexandra", 7),
+            ("Alex", 8),
+            ("andra", 9),
+            ("▁図書館", 10),
+            ("図書", 11),
+            ("無関係", 12),
+            ("😀", 13),
+        ]
+        .map(|(piece, id)| (piece.to_owned(), id))
+        .into();
+        let mut ids = Vec::new();
+        extend_source_ids(&vocab, "Alexandraは図書館にいます😀", &mut ids);
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids, [7, 8, 9, 10, 11, 13]);
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "syousetu-translate"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"
@@ -75,5 +75,5 @@ panic = "unwind"
 strip = "symbols"
 
 [patch.crates-io]
-# Preserve upstream CPU kernels, make unused tokenizer/archive adapters optional.
+# Preserve Q8 arithmetic while specializing CPU batching and optional adapters.
 candle-core = { path = "vendor/candle-core" }

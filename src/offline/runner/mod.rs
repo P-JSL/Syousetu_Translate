@@ -1,3 +1,4 @@
+pub(super) mod batched;
 pub(super) mod generation;
 mod selection;
 use crate::learning::Memory;
@@ -14,6 +15,23 @@ pub(super) struct Runner {
     small: bool,
 }
 impl Runner {
+    pub(super) fn head_for_sources(
+        &self,
+        lines: &[String],
+    ) -> Result<Option<Arc<crate::offline::vocabulary::Head>>> {
+        let ids = self.tokenizer.shortlist(lines)?;
+        if self
+            .model
+            .head_ids()
+            .is_some_and(|current| current == ids.as_slice())
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.model.prepare_head(ids)?))
+    }
+    pub(super) fn install_head(&mut self, head: Arc<crate::offline::vocabulary::Head>) {
+        self.model.install_head(head);
+    }
     pub(super) fn translate(&mut self, source: &str) -> Result<String> {
         let pool = Arc::clone(&self.pool);
         pool.install(|| self.translate_inner(source))

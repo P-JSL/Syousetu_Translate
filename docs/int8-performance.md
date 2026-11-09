@@ -1,5 +1,9 @@
 # SMaLL-100 INT8 and inference performance (0.3.1)
 
+This is the earlier implementation record. Current context batching, optional
+vocabulary pruning, live TXT and full-work measurements are in
+[CPU batching and validation (0.3.3)](cpu-batching.md).
+
 ## Model and preparation
 
 The default is direct Japanese→Korean SMaLL-100 with persistent **Q8_0 INT8**

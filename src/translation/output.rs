@@ -4,7 +4,7 @@ use crate::{
     translation::session::Session,
 };
 use anyhow::Result;
-use std::sync::LazyLock;
+use std::{io::Write, sync::LazyLock};
 static TITLE_TOKENS: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\[currentPage\]|\[lastPage\]|\[koreanTitle\]|\[japaneseTitle\]")
         .expect("static title tokens")
@@ -23,7 +23,18 @@ pub fn format_episode(
     total: usize,
     config: &Config,
 ) -> Result<String> {
-    let mut output = String::new();
+    let mut output = Vec::new();
+    write_episode(&mut output, session, episode, number, total, config)?;
+    Ok(String::from_utf8(output)?)
+}
+pub fn write_episode(
+    output: &mut dyn Write,
+    session: &mut Session,
+    episode: &Episode,
+    number: usize,
+    total: usize,
+    config: &Config,
+) -> Result<()> {
     let ko_title = session.translate(&episode.title)?;
     let current = format_number(number, &config.page_number_format)?;
     let last = format_number(total, &config.page_number_format)?;
@@ -36,21 +47,20 @@ pub fn format_episode(
         }
         .to_owned()
     });
-    output.push_str(&format!("\n\n{title}\n\n"));
-    let translated = session.translate_lines(&episode.lines)?;
-    anyhow::ensure!(
-        translated.len() == episode.lines.len(),
-        "본문 원문·번역 줄 수가 다릅니다. 불완전한 결과는 저장하지 않습니다"
-    );
-    for (line, translation) in episode.lines.iter().zip(translated) {
+    write!(output, "\n\n{title}\n\n")?;
+    output.flush()?;
+    session.translate_lines_into(&episode.lines, &mut |index, translation| {
         if config.print_japanese {
-            output.push_str(line);
-            output.push('\n');
+            writeln!(output, "{}", episode.lines[index])?;
         }
-        output.push_str(&translation);
-        output.push('\n');
-    }
-    Ok(output)
+        writeln!(output, "{translation}")?;
+        if !translation.trim().is_empty() {
+            output.flush()?;
+        }
+        Ok(())
+    })?;
+    output.flush()?;
+    Ok(())
 }
 pub fn format_header(session: &mut Session, work: &Work) -> Result<String> {
     let title = session.translate(&work.title)?;
