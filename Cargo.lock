@@ -3658,6 +3658,7 @@ dependencies = [
  "fancy-regex",
  "fs2",
  "libloading",
+ "miniz_oxide 0.9.1",
  "rayon",
  "rcgen",
  "regex",

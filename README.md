@@ -22,6 +22,15 @@ accepted as training data. See [offline engine and validation](docs/offline-engi
 and [third-party notices](THIRD_PARTY_NOTICES.md). This small public model can
 mistranslate fiction, names and slang; it does not reproduce ezTrans output.
 
+The current source separates CLI, desktop views, parsing, inference, model
+lifecycle, correction storage and optional compatibility code into domain folders.
+It embeds 68 default sentence/name corrections and six source-qualified spelling
+rules in 2,424 compressed bytes. New personal profiles use `corrections.json.zlib`;
+existing JSON profiles remain supported. Windows defaults to
+`C:\Users\rabbit\OneDrive\문서` for automatic output and save dialogs.
+See [architecture and invariants](docs/architecture.md) and the
+[supplied dictionary audit/import guide](docs/resource-audit.md).
+
 Both user-provided ZIPs were downloaded and checked against their SHA-256
 records on 2026-11-03. Their client differences, Rust module mapping, and
 remaining compatibility limits are recorded in [docs/porting-status.md](docs/porting-status.md).

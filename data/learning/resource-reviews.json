@@ -1,0 +1,7 @@
+[
+  {
+    "sha256": "ef21c6075662208e17d5220a3de8afb09af2da1b80850676f5cc89e72cb61c48",
+    "description": "Supplied 550-byte UserDict.jk: four test mappings are unsuitable as general Japanese-to-Korean corrections; only the reviewed country name is retained.",
+    "allowed_pairs": { "日本": "일본" }
+  }
+]

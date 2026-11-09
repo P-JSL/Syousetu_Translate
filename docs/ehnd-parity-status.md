@@ -86,13 +86,13 @@ semantics, original J2KEngine.dlx morphology and dictionary codecs,
 
 ## Rust changes
 
-* src/ehnd.rs — read-only filter corpus parser, configuration and
+* src/legacy/ehnd.rs — read-only filter corpus parser, configuration and
   supporting-file audit; explicit literal-only comparison mode.
-* src/native.rs — opt-in loading of the original EHND user-owned text
+* src/legacy/native.rs — opt-in loading of the original EHND user-owned text
   dictionaries as **lexical glossary entries**; proprietary markers
   containing # or 二 are deliberately not interpreted.
 * src/lib.rs — native Rust glossary translator and selected C ABI functions.
-* src/engine.rs — identifies only the root EHND wrapper and checks the
+* src/translation/engine/mod.rs — identifies only the root EHND wrapper and checks the
   companion J2KEngine.dlx and Dat directory.
 * scripts/verify_pe_exports.py and CI — inspect the built Rust DLL's actual
   Windows x86 symbol names; this is necessary but not sufficient for ABI

@@ -41,7 +41,10 @@ each original chapter as `1.html`, `2.html`, etc., for private local verificatio
 
 ## Lightweight adaptation
 
-The **교정 기억** tab stores approved corrections in `corrections.json`.
+The **교정 기억** tab stores approved corrections in `corrections.json.zlib`.
+The executable embeds compressed defaults: 60 sentence examples, eight reviewed
+names and six source-qualified spelling corrections. Existing JSON profiles are
+still supported. User edits win, and deleted defaults stay deleted after reload.
 Sentence entries match the trimmed original line/segment exactly. Terminology
 entries contain a Japanese source term, an existing Korean expression and a
 corrected expression. A term qualifies only when its Japanese source is present;
@@ -59,9 +62,9 @@ target/release/syousetu-translate memory --forget --source '私は学生です�
 
 Forgetting a term also requires `--previous`. `--memory-path PATH` overrides the
 file; `--no-learning` disables corrections. The GUI supports create/edit/delete
-and reload. Copy the JSON file to back it up. Edits lock, re-read and merge the
+and reload. Copy the correction file to back it up. Edits lock, re-read and merge the
 latest file before atomic replacement. Invalid files are preserved rather than
-silently reset. Limits are 5MB/10,000 entries. A job reads a snapshot when it
+silently reset. Limits are 5MB decompressed/25,000 entries. A job reads a snapshot when it
 starts; edits affect subsequent jobs. This is translation memory, **not neural
 weight training**. Generated output is only a bounded, in-process cache and is
 never persisted as verified learning data. Legacy placeholder TSV dictionaries

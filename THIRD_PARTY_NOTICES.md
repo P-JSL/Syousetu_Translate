@@ -15,14 +15,14 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   prepared model directly using `models/downloads.json`; quantization changes
   numerical precision and may change generated translations.
 * **Hugging Face Transformers**, Apache-2.0, supplies the reference M2M100
-  architecture and language-token specification. `src/m2m.rs` is a Rust
+  architecture and language-token specification. `src/offline/model/mod.rs` is a Rust
   implementation adapted from the v4.46.3 reference, with Q8 matrix operations,
   independently owned attention caches, and CPU inference only.
   [Reference](https://github.com/huggingface/transformers/tree/v4.46.3/src/transformers/models/m2m_100).
 * **Hugging Face Candle 0.11.1**, Apache-2.0, supplies tensor operations and
   quantization. A feature-only local patch in `vendor/candle-core/PATCHES.md`
   makes unused tokenizer/archive adapters optional without changing numerical
-  kernels. `src/nn.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
+  kernels. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
   preserving the original reduction order; the full Candle NN crate is not a
   production dependency. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
   SentencePiece normalization/BPE processing. Python and PyTorch are used only
@@ -30,7 +30,7 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
 * **P-JSL/gacha_pickup_calculator**, copyright 2026 P-JSL, MIT, commit
   `762038180135a2adcaf941f899e78db4fcee89aa`, supplies the reference pattern for
   bounded CPU budgets, independent mutable work slices, immutable shared data,
-  ordered joining, and serial/parallel consistency checks. `src/ordered.rs`
+  ordered joining, and serial/parallel consistency checks. `src/offline/ordered.rs`
   adapts this pattern to text results; no probability, FFT, or Monte Carlo
   algorithm is used for translation.
   [Reference](https://github.com/P-JSL/gacha_pickup_calculator/blob/762038180135a2adcaf941f899e78db4fcee89aa/src/domain/feedback/runner.rs) ·

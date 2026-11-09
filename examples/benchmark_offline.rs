@@ -8,7 +8,7 @@ use syousetu_translate::{
     offline::{OfflineTranslator, ParallelPolicy},
 };
 fn main() -> Result<()> {
-    std::env::set_var("CANDLE_NUM_THREADS","1");
+    std::env::set_var("CANDLE_NUM_THREADS", "1");
     let source = if let Some(path) = std::env::var_os("SYOUSETU_BENCH_INPUT") {
         std::fs::read_to_string(path)?
             .lines()

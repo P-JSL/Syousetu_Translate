@@ -41,7 +41,7 @@ Rust. No Python/transformers/bitsandbytes/accelerate/CUDA installation is needed
 - Candle core's optional `tokenizers`, `archive` and original-weight `safetensors`
   adapters are disabled in production. Only `model-tools` enables safetensors. A
   small, documented feature patch keeps CPU/quantized kernels intact. Full
-  Candle NN is replaced with only its two required F32 CPU kernels in `src/nn.rs`.
+  Candle NN is replaced with only its two required F32 CPU kernels in `src/offline/model/ops.rs`.
 - `tools/release_audit.rs` uses only Rust std. CI inspects the *normal*
   production Cargo graph and rejects tokenizer, archive, legacy regex, training
   and GPU crates. It also verifies the exact release file list and PE imports.

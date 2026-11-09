@@ -72,11 +72,11 @@ guaranteed bit-for-bit compatible with all 25 original exports**.
 
 ## Changes to this repository
 
-- src/root_dll.rs validates PE32 x86 headers, reads every named export
+- src/legacy/root_dll.rs validates PE32 x86 headers, reads every named export
   with bounds checking, and detects the J2KEngine.dlx dependency.
 - src/main.rs exposes inspect-root-dll, and rejects a file whose
   25 exports and EHND name differ from the verified top-level wrapper.
-- src/engine.rs rejects non-EHND DLLs in --engine eztrans mode and
+- src/translation/engine/mod.rs rejects non-EHND DLLs in --engine eztrans mode and
   checks that the companion J2KEngine.dlx and Dat/ exist.
 - Synthetic Rust tests cover the reader's PE offset handling.
 - Real-file testing can use SYOUSETU_ROOT_DLL_PATH locally; no commercial

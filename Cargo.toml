@@ -54,6 +54,7 @@ candle-core = { version = "=0.11.1", optional = true, default-features = false }
 sentencepiece-rs = { version = "=0.2.2", optional = true }
 rayon = { version = "1.10", optional = true }
 fs2 = "0.4"
+miniz_oxide = "=0.9.1"
 
 [target.'cfg(windows)'.dependencies]
 # Schannel uses the user's Windows certificate store (including trusted

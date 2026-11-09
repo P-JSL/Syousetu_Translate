@@ -50,14 +50,14 @@ is used by this replacement.
 | translator7 source responsibility | Rust implementation |
 |---|---|
 | Web BAT, `ApplicationEntry`, `SyosetuApplication`, `SyosetuMainController` | `웹소설 번역기.bat`, `src/bin/syousetu-gui.rs` |
-| `PageDialog`, output selection and automatic filenames | GUI chapter/output controls; existing `src/main.rs` and `src/output.rs` |
-| `ConfigHolder`, `ConfigDialog` | Public `src/config.rs`, GUI settings, validated Java Properties save/load |
-| `TranslateTask`, `SyosetuTranslateTask`, `ProgressController` | `src/jobs.rs`: ordered tasks, status, progress, reordering and removal of inactive tasks |
-| `SyosetuReader`, site parsers and information classes | Existing `src/site.rs`, `src/main.rs` and `src/output.rs` |
-| Ordinary HTTP retrieval and retries | Existing `src/network.rs`; saved HTML remains supported |
-| `Eztrans`, `EztransWrapper`, `EztransProcess` | Existing `src/engine.rs`, `src/session.rs`: isolated workers and UTF-16 `J2K_TranslateMMNTW` calls |
-| Special-character, bracket and dictionary filters | `src/filter.rs`; full-width punctuation is normalized before bracket protection, as in translator7 |
-| Safe saved output and settings | Shared `src/storage.rs` atomic writer |
+| `PageDialog`, output selection and automatic filenames | GUI chapter/output controls; existing `src/main.rs` and `src/translation/output.rs` |
+| `ConfigHolder`, `ConfigDialog` | Public `src/config/mod.rs`, GUI settings, validated Java Properties save/load |
+| `TranslateTask`, `SyosetuTranslateTask`, `ProgressController` | `src/jobs/mod.rs`: ordered tasks, status, progress, reordering and removal of inactive tasks |
+| `SyosetuReader`, site parsers and information classes | Existing `src/novel/site/mod.rs`, `src/main.rs` and `src/translation/output.rs` |
+| Ordinary HTTP retrieval and retries | `src/novel/network.rs`; saved HTML remains supported |
+| `Eztrans`, `EztransWrapper`, `EztransProcess` | Existing `src/translation/engine/mod.rs`, `src/translation/session/mod.rs`: isolated workers and UTF-16 `J2K_TranslateMMNTW` calls |
+| Special-character, bracket and dictionary filters | `src/translation/filter/`; full-width punctuation is normalized before bracket protection, as in translator7 |
+| Safe saved output and settings | Shared `src/storage/atomic.rs` transaction writer |
 
 The GUI uses `eztrans` by default when no saved configuration exists; it does
 not silently substitute the limited native glossary engine. Each queued task

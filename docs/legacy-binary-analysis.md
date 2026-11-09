@@ -58,7 +58,7 @@ ezTrans XP.zip sample. The values must not be assumed universal across versions.
 
 ## Rust implementation
 
-* src/legacy_dat.rs validates exact container bounds without writing to
+* src/legacy/legacy_dat.rs validates exact container bounds without writing to
   proprietary files; all record data is borrowed without modification.
 * CLI: cargo run -- inspect-dat --dir /path/to/Dat
 * JSON output: cargo run -- inspect-dat --dir /path/to/Dat --out report.json

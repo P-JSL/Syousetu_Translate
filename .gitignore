@@ -3,7 +3,7 @@ tools/**/target/
 *.tmp
 *.backup
 .local/
-engine/
+/engine/
 Dat/
 J2KEngine*.dll
 *.exe
