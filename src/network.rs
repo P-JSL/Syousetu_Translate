@@ -14,12 +14,8 @@ fn redirect_policy()->Policy{
     })
 }
 impl Fetcher {
-    pub fn with_options(delay_ms:u64,retries:u32,user_agent:&str)->Result<Self>{
-        let mut builder=Client::builder().timeout(Duration::from_secs(25)).redirect(redirect_policy()).user_agent(user_agent);
-        if let Some(path)=std::env::var_os("SSL_CERT_FILE").or_else(||std::env::var_os("REQUESTS_CA_BUNDLE")){
-            let bundle=std::fs::read(path).context("HTTPS CA bundle 읽기 실패")?;
-            for cert in reqwest::Certificate::from_pem_bundle(&bundle).context("HTTPS CA bundle 해석 실패")?{builder=builder.add_root_certificate(cert);}
-        }
+    pub fn with_ca(delay_ms:u64,retries:u32,user_agent:&str,ca:Option<&std::path::Path>)->Result<Self>{
+        let builder=syousetu_translate::http_client::builder(ca)?.timeout(Duration::from_secs(25)).redirect(redirect_policy()).user_agent(user_agent);
         Ok(Self {client:builder.build()?,delay_ms,retries:retries.min(10)})
     }
     pub fn get(&self,url:&str)->Result<String>{
@@ -52,7 +48,7 @@ impl Fetcher {
                     }
                     last=Some(anyhow::anyhow!("HTTP {}: {}",status,url));
                 }
-                Err(e)=>last=Some(e.into()),
+                Err(e)=>last=Some(syousetu_translate::http_client::error(e)),
             }
         }
         Err(last.unwrap_or_else(||anyhow::anyhow!("요청 실패")))

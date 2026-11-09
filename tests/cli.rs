@@ -1,3 +1,4 @@
+#![cfg(feature="legacy")]
 //! Offline CLI workflow regressions, including source-backed migration work.
 use std::{
     fs,

@@ -255,6 +255,8 @@ impl Desktop {
             "교정 기억 파일 (비우면 사용자 데이터 폴더)",
             &mut self.config.learning_path,
         );
+        row_option(ui,"추가 CA 인증서 (필요한 경우 PEM 파일)",&mut self.config.ca_bundle);
+        ui.label("Windows의 신뢰된 인증서를 기본 사용합니다. 사내망·보안 프로그램의 추가 CA만 지정해 주세요.");
         ui.checkbox(&mut self.config.learning_enabled, "교정 기억 적용");
         egui::ComboBox::from_label("본문 처리 방식")
             .selected_text(&self.config.parallel_mode)
@@ -314,10 +316,10 @@ impl Desktop {
     fn model_tools(&mut self, ui: &mut egui::Ui) {
         let status = syousetu_translate::models::status(&self.config.model_directory());
         ui.label(if status.ready {
-            "내부 모델 준비됨 · 번역은 오프라인".to_owned()
+            "SMaLL-100 INT8 준비됨 · 번역은 오프라인".to_owned()
         } else {
             format!(
-                "내부 모델 준비 필요 · 최초 다운로드 약 {}MB",
+                "SMaLL-100 INT8 준비 필요 · 최초 다운로드 약 {}MB",
                 status.download_bytes / 1_000_000
             )
         });

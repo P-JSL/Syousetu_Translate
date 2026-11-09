@@ -1,6 +1,6 @@
-# Direct offline translation (0.2)
+# Direct offline translation (0.3)
 
-The default `internal` engine runs **SMaLL-100** directly from Japanese to Korean
+The default `internal` engine runs **SMaLL-100 INT8** directly from Japanese to Korean
 in Rust. The source-visible recovery client is retained; neither ezTrans XP's
 proprietary core nor an English pivot is used by this engine.
 
@@ -19,8 +19,9 @@ target/release/syousetu-translate download \
 On Windows append `.exe`, or use the BAT/GUI package. Model preparation downloads
 approximately 1.34GB from the public Hugging Face model repository. The immutable
 commit, individual sizes and SHA-256 digests are embedded from
-`models/manifest.json`. Only verified `.safetensors` weights are loaded; pickle
-files and remote Python code are never executed. Existing assets are verified
+`models/manifest.json`. Verified `.safetensors` are converted once to a 354MB Q8_0 GGUF;
+its size/SHA-256 are pinned in `models/int8.json`. Inference reads only the INT8
+file and tokenizer/config files. Pickle and remote Python code are never executed. Existing assets are verified
 before reuse, downloads use temporary files, and concurrent preparation is locked.
 
 `--model-dir PATH`, `SYOUSETU_MODEL_DIR` or the `model_dir` setting can select a
@@ -67,7 +68,7 @@ The reference is `P-JSL/gacha_pickup_calculator` commit
 `762038180135a2adcaf941f899e78db4fcee89aa`, especially `feedback/runner.rs` and
 `app/compute.rs`. The adapted parts are:
 
-* A single CPU budget, capped at eight, divided between at most two active runners.
+* A single CPU budget, capped at eight, divided between at most four active runners.
 * Shared immutable quantized weights; each runner owns its decoder/cross-attention
   caches. KV state resets after every segment, including failed generation.
 * Disjoint preallocated output slots and ordered joins; completion order cannot
@@ -136,6 +137,8 @@ old 30-second DLL worker protocol. It does not spawn a model per CPU. The legacy
 worker protocol now reports initialization failure in a structured ready/error
 response and distinguishes process termination from a response timeout.
 
-The optional `native` glossary and exported compatibility DLL remain separate
-legacy tools; their small dictionary is not the neural engine. See
+The optional `native` glossary and compatibility ABI require `--features legacy`; their small dictionary is not the neural engine. See
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for model/code licenses.
+
+See [INT8 performance research and validation](int8-performance.md) for fused
+attention projections, kernel thread limits, TLS trust and CI changes.

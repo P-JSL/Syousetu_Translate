@@ -203,6 +203,7 @@ impl Pipeline {
         assert_eq!(choose_josa(Some('사'),"은"),"는");
         assert_eq!(hiragana_to_hangul("きゃ"),"캬");
     }
+    #[cfg(feature="legacy")]
     #[test] fn native_dictionary_names_keep_korean_josa(){
         use crate::engine::{create_engine, EngineConfig, EngineMode};
         let custom=Dictionary::parse("猫\t사자#N\n").unwrap();

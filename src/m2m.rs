@@ -6,11 +6,9 @@
 //! Pre-normalization, sinusoidal position offset, source language prefix and
 //! forced Korean decoder prefix differ from Marian. Weights are shared Q8_0
 //! tensors; each runner owns its attention caches.
-use candle_core::{
-    quantized::{GgmlDType, QMatMul, QTensor},
-    DType, Device, IndexOp, Module, Result, Tensor,
-};
-use candle_nn::{layer_norm, LayerNorm, VarBuilder};
+use crate::int8::Weights;
+use candle_core::{quantized::QMatMul, DType, Device, IndexOp, Module, Result, Tensor};
+use candle_nn::{layer_norm, LayerNorm};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -35,13 +33,10 @@ struct Linear {
     bias: Tensor,
 }
 impl Linear {
-    fn new(input: usize, output: usize, vb: VarBuilder<'_>) -> Result<Self> {
+    fn new(input: usize, output: usize, vb: Weights) -> Result<Self> {
         Ok(Self {
-            weight: QMatMul::from_qtensor(QTensor::quantize(
-                &vb.get((output, input), "weight")?,
-                GgmlDType::Q8_0,
-            )?)?,
-            bias: vb.get(output, "bias")?,
+            weight: vb.matrix("weight", (output, input))?,
+            bias: vb.floats().get(output, "bias")?,
         })
     }
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -50,20 +45,26 @@ impl Linear {
 }
 #[derive(Clone)]
 struct Attention {
-    q: Linear,
-    k: Linear,
-    v: Linear,
+    qkv: Linear,
+    cross_q: Option<Linear>,
     out: Linear,
     heads: usize,
     head_dim: usize,
     cache: Option<(Tensor, Tensor)>,
 }
 impl Attention {
-    fn new(dim: usize, heads: usize, vb: VarBuilder<'_>) -> Result<Self> {
+    fn new(dim: usize, heads: usize, cross: bool, vb: Weights) -> Result<Self> {
         Ok(Self {
-            q: Linear::new(dim, dim, vb.pp("q_proj"))?,
-            k: Linear::new(dim, dim, vb.pp("k_proj"))?,
-            v: Linear::new(dim, dim, vb.pp("v_proj"))?,
+            qkv: Linear::new(
+                dim,
+                dim * if cross { 2 } else { 3 },
+                vb.pp(if cross { "kv_proj" } else { "qkv_proj" }),
+            )?,
+            cross_q: if cross {
+                Some(Linear::new(dim, dim, vb.pp("q_proj"))?)
+            } else {
+                None
+            },
             out: Linear::new(dim, dim, vb.pp("out_proj"))?,
             heads,
             head_dim: dim / heads,
@@ -84,24 +85,35 @@ impl Attention {
         cache: bool,
     ) -> Result<Tensor> {
         let length = x.dim(1)?;
-        let q = (self.shape(self.q.forward(x)?)? * (self.head_dim as f64).powf(-0.5))?;
-        let (k, v) = match (encoder, &self.cache) {
-            (Some(_), Some((k, v))) => (k.clone(), v.clone()),
-            (Some(source), None) => (
-                self.shape(self.k.forward(source)?)?,
-                self.shape(self.v.forward(source)?)?,
-            ),
-            (None, _) => {
-                let k = self.shape(self.k.forward(x)?)?;
-                let v = self.shape(self.v.forward(x)?)?;
-                match &self.cache {
-                    Some((old_k, old_v)) if cache => {
-                        (Tensor::cat(&[old_k, &k], 1)?, Tensor::cat(&[old_v, &v], 1)?)
-                    }
-                    _ => (k, v),
+        let dim = self.heads * self.head_dim;
+        // A single projection shares input reads and scheduling across Q/K/V.
+        // Quantization is row-wise, so concatenation preserves each weight block.
+        let (q, k, v) = if let Some(source) = encoder {
+            let q = self.shape(self.cross_q.as_ref().expect("cross attention").forward(x)?)?;
+            let (k, v) = if let Some((k, v)) = &self.cache {
+                (k.clone(), v.clone())
+            } else {
+                let kv = self.qkv.forward(source)?;
+                (
+                    self.shape(kv.narrow(2, 0, dim)?)?,
+                    self.shape(kv.narrow(2, dim, dim)?)?,
+                )
+            };
+            (q, k, v)
+        } else {
+            let qkv = self.qkv.forward(x)?;
+            let q = self.shape(qkv.narrow(2, 0, dim)?)?;
+            let k = self.shape(qkv.narrow(2, dim, dim)?)?;
+            let v = self.shape(qkv.narrow(2, 2 * dim, dim)?)?;
+            let (k, v) = match &self.cache {
+                Some((old_k, old_v)) if cache => {
+                    (Tensor::cat(&[old_k, &k], 1)?, Tensor::cat(&[old_v, &v], 1)?)
                 }
-            }
+                _ => (k, v),
+            };
+            (q, k, v)
         };
+        let q = (q * (self.head_dim as f64).powf(-0.5))?;
         if cache {
             self.cache = Some((k.clone(), v.clone()));
         }
@@ -130,7 +142,7 @@ struct Layer {
     ff_norm: LayerNorm,
 }
 impl Layer {
-    fn new(cfg: &Config, decoder: bool, vb: VarBuilder<'_>) -> Result<Self> {
+    fn new(cfg: &Config, decoder: bool, vb: Weights) -> Result<Self> {
         let dim = cfg.d_model;
         let heads = if decoder {
             cfg.decoder_attention_heads
@@ -143,21 +155,25 @@ impl Layer {
             cfg.encoder_ffn_dim
         };
         Ok(Self {
-            attention: Attention::new(dim, heads, vb.pp("self_attn"))?,
-            attention_norm: layer_norm(dim, 1e-5, vb.pp("self_attn_layer_norm"))?,
+            attention: Attention::new(dim, heads, false, vb.pp("self_attn"))?,
+            attention_norm: layer_norm(dim, 1e-5, vb.pp("self_attn_layer_norm").floats())?,
             cross: if decoder {
-                Some(Attention::new(dim, heads, vb.pp("encoder_attn"))?)
+                Some(Attention::new(dim, heads, true, vb.pp("encoder_attn"))?)
             } else {
                 None
             },
             cross_norm: if decoder {
-                Some(layer_norm(dim, 1e-5, vb.pp("encoder_attn_layer_norm"))?)
+                Some(layer_norm(
+                    dim,
+                    1e-5,
+                    vb.pp("encoder_attn_layer_norm").floats(),
+                )?)
             } else {
                 None
             },
             ff1: Linear::new(dim, ff, vb.pp("fc1"))?,
             ff2: Linear::new(ff, dim, vb.pp("fc2"))?,
-            ff_norm: layer_norm(dim, 1e-5, vb.pp("final_layer_norm"))?,
+            ff_norm: layer_norm(dim, 1e-5, vb.pp("final_layer_norm").floats())?,
         })
     }
     fn forward(
@@ -198,17 +214,9 @@ pub struct Model {
     decoder_norm: LayerNorm,
 }
 impl Model {
-    pub fn new(cfg: &Config, vb: VarBuilder<'_>) -> Result<Self> {
+    pub fn new(cfg: &Config, vb: Weights) -> Result<Self> {
         let vb = vb.pp("model");
-        let key = if vb.contains_tensor("shared.weight") {
-            "shared.weight"
-        } else {
-            "decoder.embed_tokens.weight"
-        };
-        let shared = QMatMul::from_qtensor(QTensor::quantize(
-            &vb.get((cfg.vocab_size, cfg.d_model), key)?,
-            GgmlDType::Q8_0,
-        )?)?;
+        let shared = vb.matrix("shared.weight", (cfg.vocab_size, cfg.d_model))?;
         let half = cfg.d_model / 2;
         let frequencies = (0..half)
             .map(|i| (-(i as f32) * (10000f32.ln() / (half - 1) as f32)).exp())
@@ -244,8 +252,8 @@ impl Model {
             positions,
             encoder,
             decoder,
-            encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm"))?,
-            decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm"))?,
+            encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm").floats())?,
+            decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm").floats())?,
         })
     }
     fn embed(&self, ids: &[u32], past: usize) -> Result<Tensor> {

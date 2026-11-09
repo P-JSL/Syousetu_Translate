@@ -67,6 +67,7 @@ pub fn settings(args: &[String]) -> Result<Config> {
     }
     if let Some(path) = value(args, "--model-dir") {cfg.model_dir = Some(path);}
     if let Some(path) = value(args, "--memory-path") {cfg.learning_path = Some(path);}
+    if let Some(path) = value(args, "--ca-bundle") {cfg.ca_bundle = Some(path);}
     if flag(args, "--no-learning") {cfg.learning_enabled = false;}
     if let Some(mode)=value(args,"--parallel-mode") {
         if !matches!(mode.as_str(),"auto"|"serial"|"parallel"){bail!("--parallel-mode: auto|serial|parallel이어야 합니다");}
@@ -86,6 +87,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--model-dir",
         "--memory-path",
         "--parallel-mode",
+        "--ca-bundle",
     ];
     let common_flags = [
         "--japanese",
@@ -130,7 +132,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
     match command {
         "translate" => {values.extend(common_values); values.push("--text"); flags.extend(common_flags);}
         "models" => {
-            values.extend(["--config", "--model-dir"]);
+            values.extend(["--config", "--model-dir", "--ca-bundle"]);
             flags.extend(["--prepare", "--verify", "--progress-json"]);
         }
         "memory" => {
@@ -151,6 +153,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
             }
         }
         "inspect" => values.extend([
+            "--ca-bundle",
             "--config",
             "--url",
             "--html",

@@ -50,8 +50,9 @@ pub struct Status {
 /// Fast UI check; loading separately verifies every SHA-256, including cached weights.
 pub fn status(root: &Path) -> Status {
     let assets = manifest();
-    let missing = assets
+    let mut missing = assets
         .iter()
+        .filter(|a| a.file != "model.safetensors")
         .filter(|a| {
             fs::metadata(root.join(&a.model).join(&a.file))
                 .map(|m| m.len() != a.size || !m.is_file())
@@ -59,6 +60,10 @@ pub fn status(root: &Path) -> Status {
         })
         .map(|a| format!("{}/{}", a.model, a.file))
         .collect::<Vec<_>>();
+    #[cfg(feature="offline-model")]
+    if !crate::int8::exists(&root.join("ja-ko")) {missing.push("ja-ko/model-int8.gguf".into());}
+    #[cfg(not(feature="offline-model"))]
+    missing.push("offline-model feature required".into());
     Status {
         ready: missing.is_empty(),
         directory: root.to_owned(),
@@ -79,11 +84,20 @@ fn hash_file(path: &Path) -> Result<String> {
     }
     Ok(format!("{:x}", hash.finalize()))
 }
-pub fn verify(root: &Path) -> Result<()> {
-    for asset in manifest() {
+pub fn verify_metadata(root: &Path) -> Result<()> {
+    for asset in manifest().into_iter().filter(|a|a.file != "model.safetensors") {
         verify_asset(root, &asset).with_context(||
         "모델 준비가 필요합니다. GUI의 '모델 준비 / 복구' 또는 models prepare 명령을 실행해 주세요")?;
     }
+    Ok(())
+}
+pub fn verify(root:&Path)->Result<()> {
+    verify_metadata(root)?;
+    #[cfg(feature="offline-model")]
+    crate::int8::verify(&root.join("ja-ko"))?;
+    #[cfg(not(feature="offline-model"))]
+    bail!("이 실행 파일에는 내부 INT8 모델 기능이 없습니다");
+    #[allow(unreachable_code)]
     Ok(())
 }
 fn verify_asset(root: &Path, a: &Asset) -> Result<()> {
@@ -99,6 +113,9 @@ fn verify_asset(root: &Path, a: &Asset) -> Result<()> {
     Ok(())
 }
 pub fn prepare(root: &Path, mut progress: impl FnMut(u64, u64, &str)) -> Result<()> {
+    prepare_with_ca(root,None,&mut progress)
+}
+pub fn prepare_with_ca(root:&Path,ca:Option<&Path>,mut progress:impl FnMut(u64,u64,&str))->Result<()>{
     fs::create_dir_all(root)?;
     let lock = OpenOptions::new()
         .read(true)
@@ -108,22 +125,19 @@ pub fn prepare(root: &Path, mut progress: impl FnMut(u64, u64, &str)) -> Result<
         .open(root.join(".prepare.lock"))?;
     lock.try_lock_exclusive()
         .context("다른 작업에서 모델을 준비하고 있습니다")?;
-    let assets = manifest();
+    #[cfg(feature="offline-model")]
+    let int8_ready=crate::int8::verify(&root.join("ja-ko")).is_ok();
+    #[cfg(not(feature="offline-model"))]
+    let int8_ready=false;
+    let assets = manifest().into_iter().filter(|a|a.file!="model.safetensors" || !int8_ready).collect::<Vec<_>>();
     let total = assets.iter().map(|a| a.size).sum();
     let mut done = 0u64;
-    let mut builder = reqwest::blocking::Client::builder()
+    let builder = crate::http_client::builder(ca)?
         .https_only(true)
         .redirect(reqwest::redirect::Policy::limited(10))
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(1800))
         .user_agent("SyousetuTranslate/model-preparation");
-    if let Some(path) =
-        std::env::var_os("SSL_CERT_FILE").or_else(|| std::env::var_os("REQUESTS_CA_BUNDLE"))
-    {
-        for cert in reqwest::Certificate::from_pem_bundle(&fs::read(path)?)? {
-            builder = builder.add_root_certificate(cert);
-        }
-    }
     let client = builder.build()?;
     for asset in assets {
         let label = format!("{}/{}", asset.model, asset.file);
@@ -140,7 +154,7 @@ pub fn prepare(root: &Path, mut progress: impl FnMut(u64, u64, &str)) -> Result<
                 "https://huggingface.co/{}/resolve/{}/{}?download=true",
                 asset.repo, asset.revision, asset.file
             );
-            let mut response = client.get(url).send()?.error_for_status()?;
+            let mut response = client.get(url).send().map_err(crate::http_client::error)?.error_for_status()?;
             let mut file = File::create(&temporary)?;
             let mut hash = Sha256::new();
             let mut count = 0;
@@ -177,6 +191,11 @@ pub fn prepare(root: &Path, mut progress: impl FnMut(u64, u64, &str)) -> Result<
             format!("모델 준비 실패: {label}. 다시 준비하면 검증된 파일은 재사용합니다")
         })?;
         done += asset.size;
+    }
+    #[cfg(feature="offline-model")]
+    if !int8_ready {
+        progress(total,total,"INT8 변환 및 저장 중 (최초 1회)");
+        crate::int8::ensure(&root.join("ja-ko"))?;
     }
     verify(root)?;
     Ok(())

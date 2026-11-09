@@ -330,9 +330,12 @@ fn collect_episode_ids(
         return false;
     }
     match value {
-        Value::Array(xs) => xs.iter().fold(true, |complete, x| {
-            collect_episode_ids(x, state, out, visiting, episode_context, depth + 1) && complete
-        }),
+        Value::Array(xs) => {
+            // Visit every node even after a failure: collection has side effects.
+            let mut complete = true;
+            for x in xs {complete = collect_episode_ids(x,state,out,visiting,episode_context,depth+1) && complete;}
+            complete
+        },
         Value::Object(map) => {
             if let Some(reference) = map.get("__ref").and_then(Value::as_str) {
                 if let Some(id) = reference.strip_prefix("Episode:") {

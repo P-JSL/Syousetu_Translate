@@ -23,6 +23,7 @@ pub struct Config {
     pub learning_path: Option<String>,
     pub learning_enabled: bool,
     pub parallel_mode: String,
+    pub ca_bundle: Option<String>,
     pub user_agent: String,
     pub max_title_length: usize,
     pub save_without_file_chooser: bool,
@@ -37,7 +38,7 @@ impl Default for Config {
             page_download_delay: 1200,
             hameln_page_download_delay: 5500,
             max_retry_count: 2,
-            max_cpu_core_count: 1,
+            max_cpu_core_count: -1,
             include_furigana: false,
             include_comment: false,
             comment_separator: "\n--------------------\n".into(),
@@ -47,7 +48,8 @@ impl Default for Config {
             learning_path: None,
             learning_enabled: true,
             parallel_mode: "auto".into(),
-            user_agent: "SyousetuTranslateRust/0.1 (personal web novel reader)".into(),
+            ca_bundle: None,
+            user_agent: "SyousetuTranslateRust/0.3 (personal web novel reader)".into(),
             max_title_length: 25,
             save_without_file_chooser: false,
         }
@@ -112,6 +114,7 @@ impl Config {
                 "learning_enabled" => cfg.learning_enabled = boolean()?,
                 "model_dir" => cfg.model_dir = (!value.is_empty()).then_some(value),
                 "learning_path" => cfg.learning_path = (!value.is_empty()).then_some(value),
+                "ca_bundle" => cfg.ca_bundle = (!value.is_empty()).then_some(value),
                 "parallel_mode" => {
                     if !matches!(value.as_str(),"auto"|"serial"|"parallel"){bail!("parallel_mode: auto|serial|parallel이어야 합니다");}
                     cfg.parallel_mode=value;
@@ -216,6 +219,7 @@ impl Config {
             ("learning_path", self.learning_path.clone().unwrap_or_default()),
             ("learning_enabled", self.learning_enabled.to_string()),
             ("parallel_mode", self.parallel_mode.clone()),
+            ("ca_bundle", self.ca_bundle.clone().unwrap_or_default()),
             (
                 "eztrans_path",
                 self.eztrans_path.clone().unwrap_or_default(),

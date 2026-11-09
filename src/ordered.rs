@@ -11,21 +11,29 @@ pub fn map<W: Send>(
         return Ok(Vec::new());
     }
     anyhow::ensure!(!workers.is_empty(), "번역 작업자가 없습니다");
-    let chunk_size = input.len().div_ceil(workers.len().min(input.len()));
     let mut output = vec![None; input.len()];
+    // Each claim hands out a different mutable slot. Workers can immediately
+    // claim another line when finished, without waiting for a slower chunk.
+    // The lock protects only the iterator, never inference or a result write.
+    let pending = std::sync::Mutex::new(input.iter().zip(output.iter_mut()).enumerate());
     std::thread::scope(|scope| -> Result<()> {
         let mut handles = Vec::new();
-        for (chunk, (worker, (source, slots))) in workers
-            .iter_mut()
-            .zip(input.chunks(chunk_size).zip(output.chunks_mut(chunk_size)))
-            .enumerate()
-        {
+        for worker in workers.iter_mut().take(input.len()) {
             let run = &run;
+            let pending = &pending;
             handles.push(scope.spawn(move || -> Result<()> {
-                for (offset, (text, slot)) in source.iter().zip(slots).enumerate() {
-                    *slot = Some(run(worker, text).with_context(|| {
-                        format!("본문 {}번째 줄 번역 실패", chunk * chunk_size + offset + 1)
-                    })?);
+                loop {
+                    let task = pending
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("번역 작업 배분 잠금 오류"))?
+                        .next();
+                    let Some((index, (text, slot))) = task else {
+                        break;
+                    };
+                    *slot = Some(
+                        run(worker, text)
+                            .with_context(|| format!("본문 {}번째 줄 번역 실패", index + 1))?,
+                    );
                 }
                 Ok(())
             }));

@@ -5,9 +5,13 @@ use std::{env,fs,path::{Path,PathBuf}};
 use engine::{EngineConfig,EngineMode,create_engine};
 use config::Config;
 use session::Session;
+#[cfg(feature="legacy")]
 use syousetu_translate::ehnd::{Ehnd, Phase};
+#[cfg(feature="legacy")]
 use syousetu_translate::ehnd_regex::Executor as EhndRegexExecutor;
+#[cfg(feature="legacy")]
 struct EhndRegexComparison {inner:Box<dyn engine::Translator>,executor:EhndRegexExecutor}
+#[cfg(feature="legacy")]
 impl engine::Translator for EhndRegexComparison {
     fn translate(&mut self,text:&str)->Result<String> {
         let pre=self.executor.apply(Phase::Pre,text)?;
@@ -16,7 +20,9 @@ impl engine::Translator for EhndRegexComparison {
     }
 }
 
+#[cfg(feature="legacy")]
 struct EhndLiteralComparison { inner:Box<dyn engine::Translator>, filters:Ehnd }
+#[cfg(feature="legacy")]
 impl engine::Translator for EhndLiteralComparison {
     fn translate(&mut self,text:&str)->Result<String> {
         let pre=self.filters.apply_literal(Phase::Pre,text)?;
@@ -39,6 +45,10 @@ fn internal_mode(args:&[String],config:&Config)->bool {
         && value(args,"--engine").as_deref().unwrap_or(&config.translator_name)=="internal"
 }
 fn engine_from_args(args:&[String],config:&Config)->Result<Box<dyn engine::Translator>>{
+    #[cfg(not(feature="legacy"))]
+    for option in ["--ehnd-dir","--ehnd-regex-experimental","--ehnd-literal-only","--ehnd-regex-strict"] {
+        if flag(args,option){bail!("{option}은 legacy 기능 빌드가 필요합니다. 내부 엔진에는 교정 기억을 사용해 주세요");}
+    }
     if internal_mode(args,config) {
         for option in ["--dictionary","--native-dictionary","--native-strict","--ehnd-dir","--ehnd-regex-experimental","--ehnd-literal-only","--ehnd-regex-strict"] {
             if flag(args,option) {bail!("{option}은 내부 신경망 엔진에서 지원하지 않습니다. 교정 기억의 문장·용어 기능을 사용해 주세요");}
@@ -77,6 +87,7 @@ fn engine_from_args(args:&[String],config:&Config)->Result<Box<dyn engine::Trans
         native_dictionary:value(args,"--native-dictionary").map(PathBuf::from),
         strict_native:flag(args,"--native-strict"),
     })?;
+    #[cfg(feature="legacy")]
     if flag(args,"--ehnd-regex-experimental") {
         if flag(args,"--ehnd-literal-only") {
             bail!("--ehnd-regex-experimental과 --ehnd-literal-only는 동시 지정 불가");
@@ -91,6 +102,7 @@ fn engine_from_args(args:&[String],config:&Config)->Result<Box<dyn engine::Trans
             executor.audit.rejected,executor.audit.directives,executor.audit.unknown);
         return Ok(Box::new(EhndRegexComparison{inner:translator,executor}));
     }
+    #[cfg(feature="legacy")]
     if flag(args,"--ehnd-literal-only") {
         if engine!=EngineMode::Native {bail!("EHND 리터럴 비교는 --engine native에서만 허용됩니다");}
         let dir=require(args,"--ehnd-dir")?;
@@ -126,14 +138,14 @@ fn local_session(args:&[String],config:&Config)->Result<Session>{
     else{Ok(Session::local(pipeline_from_args(args,config)?,engine_from_args(args,config)?))}
 }
 fn translation_session(args:&[String],config:&Config)->Result<Session>{
-    if internal_mode(args,config)||config.workers()==1{local_session(args,config)}
+    if !cfg!(feature="legacy")||internal_mode(args,config)||config.workers()==1{local_session(args,config)}
     else{Session::parallel(args,config.workers())}
 }
 fn require(args:&[String],key:&str)->Result<String>{value(args,key).context(format!("필수 옵션 {key} 누락"))}
 fn fetcher_for(args:&[String],config:&Config)->Result<Fetcher>{
     let(site,_)=canonicalize(&require(args,"--url")?)?;
     let delay=if site==Site::Hameln{config.hameln_page_download_delay}else{config.page_download_delay};
-    Fetcher::with_options(delay,config.max_retry_count,&config.user_agent)
+    Fetcher::with_ca(delay,config.max_retry_count,&config.user_agent,config.ca_bundle.as_deref().map(Path::new))
 }
 fn load_work(args:&[String],fetcher:&Fetcher)->Result<Work>{
     use std::collections::{BTreeMap,HashSet};
@@ -251,7 +263,7 @@ fn model_command(args:&[String])->Result<()> {
     if flag(args,"--prepare")&&flag(args,"--verify"){bail!("--prepare와 --verify는 함께 사용할 수 없습니다");}
     if flag(args,"--prepare") {
         let mut last=std::time::Instant::now()-std::time::Duration::from_secs(2);
-        syousetu_translate::models::prepare(&dir,|done,total,label|{
+        syousetu_translate::models::prepare_with_ca(&dir,cfg.ca_bundle.as_deref().map(Path::new),|done,total,label|{
             if done==total||last.elapsed()>=std::time::Duration::from_secs(1){
                 if flag(args,"--progress-json") {emit_progress(args,done as usize,total as usize,"bytes");}
                 eprintln!("모델 준비 {done}/{total}: {label}");last=std::time::Instant::now();
@@ -282,7 +294,7 @@ fn memory_command(args:&[String])->Result<()> {
     Ok(())
 }
 fn help() {
-    println!("{}", r#"Syousetu Translate (Rust)
+    println!(r#"Syousetu Translate (Rust)
   inspect --url URL [--html saved.html]
   inspect-dat --dir PATH [--out inspection.json]
   inspect-root-dll --dll PATH [--out root-report.json]
@@ -297,7 +309,8 @@ fn help() {
   inspect-config [--config config/config.properties]
   write-config --out config/config.properties [--json edited-settings.json]
 
-  Engine: --engine internal|native|eztrans|passthrough (default: internal)
+  Engine: --engine internal|passthrough (default: internal, SMaLL-100 INT8)
+  Compatibility commands/engines listed above require --features legacy at build time.
   models [--prepare | --verify] [--model-dir PATH]
   translate --text JAPANESE [--model-dir PATH]
   memory [--learn | --forget] --source JAPANESE [--corrected KOREAN] [--previous OLD_KOREAN]
@@ -308,7 +321,7 @@ fn help() {
   File: --input-encoding shift_jis|euc-kr|utf-8|utf-16le|latin1
   Download: --furigana --include-comments --comment-separator TEXT
   Output: --title-format TEXT --page-number-format 000 --output-dir DIR --auto-output
-  Network: --delay-ms 1200 --retry 2 --user-agent TEXT
+  Network: --delay-ms 1200 --retry 2 --user-agent TEXT [--ca-bundle certificates.pem]
   Offline index pagination: --html first.html --index-html-dir DIR (2.html, 3.html, ...)
   Progress events: --progress-json (JSON lines on stderr)
 
@@ -316,6 +329,7 @@ fn help() {
   --passthrough is only for parser tests, not Japanese-to-Korean translation.
   Do not redistribute proprietary vendor assets without permission."#);
 }
+#[cfg(feature="legacy")]
 fn inspect_dat(args:&[String])->Result<()> {
     let directory=PathBuf::from(require(args,"--dir")?);
     let report=syousetu_translate::legacy_dat::inspect(&directory)?;
@@ -325,6 +339,7 @@ fn inspect_dat(args:&[String])->Result<()> {
     } else {println!("{json}");}
     Ok(())
 }
+#[cfg(feature="legacy")]
 fn inspect_root_dll(args:&[String])->Result<()> {
     let path=PathBuf::from(require(args,"--dll")?);
     let bytes=fs::read(&path).with_context(||format!("DLL 파일 읽기 실패: {}",path.display()))?;
@@ -340,6 +355,7 @@ fn inspect_root_dll(args:&[String])->Result<()> {
     }
     Ok(())
 }
+#[cfg(feature="legacy")]
 fn inspect_ehnd(args:&[String])->Result<()> {
     let directory=PathBuf::from(require(args,"--dir")?);
     let rules=Ehnd::load(&directory)?;
@@ -351,6 +367,7 @@ fn inspect_ehnd(args:&[String])->Result<()> {
 }
 /// Local differential harness: compare user-installed original EHND+DLX
 /// against native Rust. No source sentences are uploaded to GitHub.
+#[cfg(feature="legacy")]
 fn compare_engines(args:&[String])->Result<()> {
     let install=PathBuf::from(require(args,"--eztrans-dir")?);
     let input=PathBuf::from(require(args,"--input")?);
@@ -402,6 +419,7 @@ fn compare_engines(args:&[String])->Result<()> {
     }else{println!("{serialized}");}
     Ok(())
 }
+#[cfg(feature="legacy")]
 fn audit_ehnd_regex(args:&[String])->Result<()> {
     let filters=Ehnd::load(Path::new(&require(args,"--dir")?))?;
     let executor=EhndRegexExecutor::compile(&filters,flag(args,"--strict"))?;
@@ -411,6 +429,7 @@ fn audit_ehnd_regex(args:&[String])->Result<()> {
     }else{println!("{serialized}");}
     Ok(())
 }
+#[cfg(feature="legacy")]
 fn audit_ehnd_control(args:&[String])->Result<()> {
     let filters=Ehnd::load(Path::new(&require(args,"--dir")?))?;
     let result=syousetu_translate::ehnd_control::audit(&filters);
@@ -436,15 +455,26 @@ fn run()->Result<()> {
         Some("inspect-config")=>{println!("{}",serde_json::to_string_pretty(&options::settings(&args[2..])?)?);Ok(())},
         Some("write-config")=>write_config(&args[2..]),
         Some("inspect")=>inspect(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("inspect-dat")=>inspect_dat(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("inspect-root-dll")=>inspect_root_dll(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("inspect-ehnd")=>inspect_ehnd(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("audit-ehnd-regex")=>audit_ehnd_regex(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("audit-ehnd-control")=>audit_ehnd_control(&args[2..]),
+        #[cfg(feature="legacy")]
         Some("compare-engines")=>compare_engines(&args[2..]),
         Some("download")=>download(&args[2..]),
         Some("file")=>file_translate(&args[2..]),
         _=>bail!("알 수 없는 명령"),
     }
 }
-fn main(){if let Err(e)=run(){eprintln!("ERROR: {e:#}");std::process::exit(1)}}
+fn main(){
+    // Set before reqwest, Rayon or Candle can start threads. Candle's global
+    // quantized kernel pool is independent of our bounded sentence pools.
+    // One kernel thread avoids global pool contention and host CPU oversubscription.
+    env::set_var("CANDLE_NUM_THREADS","1");
+    if let Err(e)=run(){eprintln!("ERROR: {e:#}");std::process::exit(1)}}

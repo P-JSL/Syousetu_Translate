@@ -18,7 +18,7 @@ fn desktop_queue_reorders_waiting_jobs_isolates_settings_and_continues_after_fai
     fs::create_dir(directory.join("chapters")).unwrap();
     fs::write(directory.join("chapters/1.html"), episode).unwrap();
     let mut queue = Queue::new(env!("CARGO_BIN_EXE_syousetu-translate"), &directory);
-    let config = Config {translator_name:"native".into(), ..Config::default()};
+    let config = Config {translator_name:"passthrough".into(), ..Config::default()};
     let args = |input: &str, output: &str| -> Vec<OsString> {
         [
             "download",
@@ -84,13 +84,13 @@ fn desktop_queue_reorders_waiting_jobs_isolates_settings_and_continues_after_fai
     );
     assert!(fs::read_to_string(directory.join("plain.txt"))
         .unwrap()
-        .contains("나는 학생입니다。\n"));
+        .contains("私は学生です。\n"));
     assert!(!fs::read_to_string(directory.join("plain.txt"))
         .unwrap()
-        .contains("私は学生です。\n"));
+        .contains("私は学生です。\n私は学生です。\n"));
     assert!(fs::read_to_string(directory.join("both.txt"))
         .unwrap()
-        .contains("私は学生です。\n나는 학생입니다。\n"));
+        .contains("私は学生です。\n私は学生です。\n"));
     assert_eq!(
         fs::read_to_string(directory.join("index.html")).unwrap(),
         index

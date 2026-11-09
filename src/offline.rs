@@ -4,8 +4,6 @@
 mod m2m;
 use crate::{learning::Memory, models, ordered};
 use anyhow::{bail, Context, Result};
-use candle_core::{DType, Device};
-use candle_nn::VarBuilder;
 use sentencepiece_rs::SentencePieceProcessor;
 use std::{
     collections::{HashMap, VecDeque},
@@ -229,26 +227,24 @@ impl OfflineTranslator {
             bail!("내부 모델은 64비트 실행 파일이 필요합니다");
         }
         eprintln!("직접 일→한 모델 체크섬 확인 중...");
-        models::verify(root)?;
+        models::verify_metadata(root)?;
         let directory = root.join("ja-ko");
         let config: m2m::Config =
             serde_json::from_slice(&fs::read(directory.join("config.json"))?)?;
         let tokenizer = Arc::new(Tokenizer::open(&directory)?);
         let budget = threads.clamp(1, 8);
-        let count = budget.min(2);
+        let count = budget.min(4);
         let load_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .num_threads(budget)
                 .build()?,
         );
-        eprintln!("직접 일→한 모델 로딩 및 Q8 변환 중...");
+        eprintln!("직접 일→한 INT8 모델 로딩 중...");
         let model = load_pool.install(|| -> Result<_> {
-            let vb = VarBuilder::from_buffered_safetensors(
-                fs::read(directory.join("model.safetensors"))?,
-                DType::F32,
-                &Device::Cpu,
-            )?;
-            Ok(m2m::Model::new(&config, vb)?)
+            Ok(m2m::Model::new(
+                &config,
+                crate::int8::Weights::open(&directory)?,
+            )?)
         })?;
         let small = config.decoder_layers == 3;
         let memory = Arc::new(memory);

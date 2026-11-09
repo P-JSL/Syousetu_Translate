@@ -30,7 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          fetch-tags: false
           persist-credentials: false
       - name: Verify tagged source and successful platform builds
         id: verify
@@ -45,6 +46,7 @@ jobs:
           repo = os.environ['GITHUB_REPOSITORY']
           def api(path):
               return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}']))
+          subprocess.check_call(['git', 'fetch', '--no-tags', '--depth=1', 'origin', f'refs/tags/{tag}:refs/tags/{tag}'])
           source = subprocess.check_output(['git', 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}'], text=True).strip()
           assert re.fullmatch(r'[0-9a-f]{40}', source)
           run = api(f'actions/runs/{run_id}')
@@ -53,13 +55,14 @@ jobs:
           assert run['head_sha'] == source
           jobs = api(f'actions/runs/{run_id}/jobs?per_page=100')['jobs']
           required = {'checks (ubuntu-latest)', 'checks (windows-latest)'}
+          required |= {"lint", "legacy"} if "lint" in {j["name"] for j in jobs} else set()
           assert required <= {j['name'] for j in jobs if j['conclusion'] == 'success'}
           # Tag lookup returns published releases; locate drafts in the list.
           releases = [r for r in api('releases?per_page=100') if r['tag_name'] == tag]
           assert len(releases) == 1, 'Expected exactly one release draft for this tag'
           release = releases[0]
           assert release['draft'], 'Only unpublished draft assets may be replaced'
-          artifacts = api(f'actions/runs/{run_id}/artifacts')['artifacts']
+          artifacts = api(f'actions/runs/{run_id}/artifacts?per_page=100')['artifacts']
           matches = [a for a in artifacts if a['name'] in ['SyousetuTranslate-Web-Windows-x86', 'SyousetuTranslate-Web-Windows-x64'] and not a['expired']]
           assert len(matches) == 1
           assert matches[0]['workflow_run']['head_sha'] == source
@@ -68,6 +71,10 @@ jobs:
               output.write(f'source_sha={source}\n')
               output.write(f'artifact_name={matches[0]["name"]}\n')
           PY
+      - name: Use verified source for packaging rules
+        env:
+          SOURCE_SHA: ${{ steps.verify.outputs.source_sha }}
+        run: git checkout --detach "$SOURCE_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: ${{ steps.verify.outputs.artifact_name }}

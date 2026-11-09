@@ -9,7 +9,8 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   [source](https://github.com/alirezamshi/small100) ·
   [MIT license](licenses/MIT-SMaLL100.txt).
   The pinned safetensors revision and SHA-256 values are in `models/manifest.json`.
-  The application converts floating-point weights to Q8_0 locally; this changes
+  The application converts floating-point weights once to persistent INT8 Q8_0
+  GGUF (`models/int8.json`), with fused Q/K/V projections; this changes
   numerical precision and may change generated translations.
 * **Hugging Face Transformers**, Apache-2.0, supplies the reference M2M100
   architecture and language-token specification. `src/m2m.rs` is a Rust

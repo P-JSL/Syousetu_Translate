@@ -1,78 +1,92 @@
 name: Rust CI
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  CANDLE_NUM_THREADS: 1
+
 jobs:
+  # Platform builds and lint run concurrently. Tests and shipping executables
+  # reuse the same optimized dependency artifacts on each platform.
   checks:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          targets: ${{ matrix.target }}
-          components: rustfmt, clippy
-      - name: Linux desktop build dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
-      - name: Verify local engine installer with synthetic fixtures
+          shared-key: production-${{ matrix.os }}
+      - name: Verify installer and package rules with synthetic fixtures
         run: python -m unittest discover -s scripts -p 'test_*.py'
-      - run: cargo clippy --locked --features gui --all-targets --target ${{ matrix.target }}
-      - run: cargo test --locked --features gui --all-targets --target ${{ matrix.target }}
-      - run: cargo build --locked --features gui --release --target ${{ matrix.target }}
-      - name: Verify exported ABI symbol names in Windows DLL
-        if: matrix.os == 'windows-latest'
-        run: python scripts/verify_pe_exports.py target/x86_64-pc-windows-msvc/release/syousetu_translate.dll J2K_InitializeEx J2K_TranslateMMNTW J2K_TranslateMMNT J2K_FreeMem
-      - uses: actions/upload-artifact@v4
-        if: matrix.os == 'windows-latest'
-        with:
-          name: SyousetuTranslate-Windows-x64
-          path: |
-            target/x86_64-pc-windows-msvc/release/syousetu-translate.exe
-            target/x86_64-pc-windows-msvc/release/syousetu_translate.dll
-          if-no-files-found: error
-      - name: Package web client
-        if: matrix.os == 'windows-latest'
+      - name: Test production features
+        run: cargo test --locked --release --features gui --all-targets
+      - name: Verify Hugging Face TLS with the Windows trust store
+        if: runner.os == 'Windows'
+        run: cargo test --locked --release --features gui --lib pinned_huggingface_config_uses_platform_trust -- --ignored
+      - name: Build shipping executables
+        run: cargo build --locked --release --features gui --bins
+      - name: Stage only application files and licenses
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist/web-client | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/syousetu-gui.exe dist/web-client/
-          Copy-Item target/x86_64-pc-windows-msvc/release/syousetu-translate.exe dist/web-client/
+          New-Item -ItemType Directory -Force dist/web-client/licenses | Out-Null
+          Copy-Item target/release/syousetu-gui.exe dist/web-client/
+          Copy-Item target/release/syousetu-translate.exe dist/web-client/
           Copy-Item '웹소설 번역기.bat' dist/web-client/
           Copy-Item docs/windows-web-client.md dist/web-client/README.md
           Copy-Item THIRD_PARTY_NOTICES.md dist/web-client/
-          Copy-Item -Recurse licenses dist/web-client/
+          Copy-Item licenses/Apache-2.0.txt,licenses/MIT-SMaLL100.txt,licenses/MIT-gacha-pickup-calculator.txt dist/web-client/licenses/
+          python scripts/verify_web_artifact.py dist/web-client
       - uses: actions/upload-artifact@v4
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         with:
           name: SyousetuTranslate-Web-Windows-x64
           path: dist/web-client/
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
-  live-site-smoke:
-    name: Live site smoke tests (non-blocking)
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - name: Kakuyomu work index
-        continue-on-error: true
-        run: cargo run --no-default-features -- inspect --url https://kakuyomu.jp/works/11054822663814504924
-      - name: Kakuyomu chapter 1 (passthrough only)
-        continue-on-error: true
-        run: cargo run --no-default-features -- download --url https://kakuyomu.jp/works/11054822663814504924 --out kakuyomu-first.txt --start 1 --end 1 --passthrough
-      - name: Alphapolis work index
-        continue-on-error: true
-        run: cargo run --no-default-features -- inspect --url https://www.alphapolis.co.jp/novel/767156331/284095783
-      - name: Alphapolis chapter 1 (passthrough only)
-        continue-on-error: true
-        run: cargo run --no-default-features -- download --url https://www.alphapolis.co.jp/novel/767156331/284095783 --out alphapolis-first.txt --start 1 --end 1 --passthrough
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lint-linux
+      - run: cargo clippy --locked --features gui --all-targets -- -D warnings
+
+  legacy:
+    # The recovery tools are opt-in and never uploaded with production files.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: legacy-linux
+      - run: cargo test --locked --no-default-features --features legacy --all-targets

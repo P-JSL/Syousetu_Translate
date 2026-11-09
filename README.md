@@ -1,15 +1,16 @@
 # Syousetu Translate — Rust migration
 
-**v0.2: Rust desktop/CLI with direct offline Japanese→Korean neural translation. Windows x64 and Linux x64.**
+**v0.3: SMaLL-100 INT8, direct offline Japanese→Korean translation. Windows x64 and Linux x64.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 
-The default `internal` engine runs the public **SMaLL-100** model directly from
+The default `internal` engine runs the public **SMaLL-100 INT8** model directly from
 Japanese to Korean in Rust/Candle. No English pivot, proprietary DLL, Python,
 GPU, or translation API is required. Preparation downloads approximately **1.34GB**
 of pinned, SHA-256-verified model assets once. Inference then runs offline;
 opening a live novel URL still requires access to that website. Weights are
-converted locally to Q8_0 and shared between workers. Use a 64-bit system;
+converted once to a persistent **354MB Q8_0 GGUF**, then loaded directly and
+shared between workers. FP32 weights are not needed after conversion. Use a 64-bit system;
 8GB RAM is recommended for initial loading/conversion.
 
 User-approved sentence corrections and source-qualified terminology edits are
@@ -46,8 +47,7 @@ to `internal`. Old GUI `native`/`eztrans` settings switch to the internal engine
 in memory; existing settings files change only when saved. Output selection,
 chapter ranges, settings save/load,
 queue reordering, per-task settings snapshots, errors and progress are supported.
-Linux needs a graphical desktop and the X11/Wayland/OpenGL development packages
-listed in CI. A Korean system font is loaded automatically; `SYOUSETU_FONT`
+Linux needs a graphical desktop with X11/OpenGL runtime libraries. A Korean system font is loaded automatically; `SYOUSETU_FONT`
 can select a local font. The CLI does not require the `gui` feature or a display.
 
 Java/JRE/JavaFX and ezTrans XP are not needed for the default internal engine.
@@ -58,9 +58,11 @@ The `SyousetuTranslate-Web-Windows-x64` CI artifact contains both executables,
 the BAT launcher, notices and a [Windows usage guide](docs/windows-web-client.md).
 
 GitHub Actions checks Linux x64 and Windows x64. The old CLI-only DLL adapter
-requires a separate i686 build with `--no-default-features`; it is a legacy
-compatibility path. The exported compatibility DLL remains the limited glossary
-implementation, not the neural engine. Sections below describe that legacy scope.
+requires a separate i686 build with `--no-default-features --features legacy`.
+Recovery inspection/glossary tools are also behind `legacy`; the production
+package contains no compatibility DLL or vendor/runtime/model bundles.
+[INT8, TLS, performance research and validation](docs/int8-performance.md) covers
+the current implementation. Sections below describe the optional legacy scope.
 
 ## Verified legacy binary file readers (not a full engine)
 
@@ -142,13 +144,12 @@ mode does not enable EHND filters. See docs/ehnd-parity-status.md.
 
 ## Rust-native J2K replacement (experimental)
 
-The CLI now uses a **Rust-only, DLL-free** Japanese → Korean glossary engine by
-default. The package also compiles a native DLL exposing the original Java
-clients' **four** C exports: J2K_InitializeEx, J2K_TranslateMMNTW
-(UTF-16), J2K_TranslateMMNT (Shift-JIS input / CP949 output), and J2K_FreeMem. The Windows x86 artifact includes both executables and
-syousetu_translate.dll. If you need the Java application's historical DLL
-filename, rename a copy of the Rust DLL to J2KEngineH.dll and place it on
-jna.library.path; do not mix pointers from different DLL builds.
+The optional `legacy` feature preserves the old glossary and **four** C exports:
+J2K_InitializeEx, J2K_TranslateMMNTW, J2K_TranslateMMNT and J2K_FreeMem.
+These are excluded from the default CLI/GUI and release files. To explicitly
+build the compatibility DLL, use `cargo rustc --release --lib --no-default-features
+--features legacy --crate-type cdylib` (and the appropriate i686 Windows target).
+The default engine is SMaLL-100 INT8, not this glossary.
 
 **Important limitation:** This is NOT the ezTrans language engine recreated
 bit-for-bit. It does not implement its proprietary parser, morphological

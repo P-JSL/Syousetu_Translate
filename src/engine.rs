@@ -1,8 +1,12 @@
 //! Optional Windows ezTrans ABI-compatible interface.
 //! Requires a licensed, user-provided 32-bit DLL and its own dictionary data.
-use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
-#[cfg(windows)]
+use anyhow::{bail, Result};
+#[cfg(feature="legacy")]
+use anyhow::Context;
+use std::path::PathBuf;
+#[cfg(feature="legacy")]
+use std::path::Path;
+#[cfg(all(windows,feature="legacy"))]
 use std::ffi::CString;
 
 pub trait Translator {
@@ -13,13 +17,13 @@ pub struct Passthrough;
 impl Translator for Passthrough {
     fn translate(&mut self, text: &str) -> Result<String> { Ok(text.to_owned()) }
 }
-#[cfg(windows)]
+#[cfg(all(windows,feature="legacy"))]
 pub struct EzTrans {
     _lib: libloading::Library,
     translate: unsafe extern "system" fn(i32, *const u16) -> *mut u16,
     free: unsafe extern "C" fn(*mut u16) -> i32,
 }
-#[cfg(windows)]
+#[cfg(all(windows,feature="legacy"))]
 impl EzTrans {
     pub fn open(dir: &Path) -> Result<Self> {
         if usize::BITS!=32 {bail!("기존 ezTrans DLL은 32비트 전용입니다. 내부 번역기는 --engine internal로 실행해 주세요");}
@@ -57,7 +61,7 @@ impl EzTrans {
         }
     }
 }
-#[cfg(windows)]
+#[cfg(all(windows,feature="legacy"))]
 impl Translator for EzTrans {
     fn translate(&mut self, text: &str) -> Result<String> {
         let wide:Vec<u16>=text.encode_utf16().chain(std::iter::once(0)).collect();
@@ -74,13 +78,14 @@ impl Translator for EzTrans {
         Ok(result.trim().to_owned())
     }
 }
-#[cfg(not(windows))]
+#[cfg(all(not(windows),feature="legacy"))]
 pub struct EzTrans;
-#[cfg(not(windows))]
+#[cfg(all(not(windows),feature="legacy"))]
 impl EzTrans {pub fn open(_: &Path)->Result<Self>{bail!("ezTrans DLL은 Windows에서만 실행됩니다")}}
-#[cfg(not(windows))]
+#[cfg(all(not(windows),feature="legacy"))]
 impl Translator for EzTrans {fn translate(&mut self, _: &str)->Result<String>{bail!("Windows ezTrans DLL 필요")}}
 /// Resolve a user-provided installation or a local, Git-ignored engine bundle.
+#[cfg(feature="legacy")]
 fn resolve_engine_dir(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(dir) = explicit {
         return Ok(dir.to_path_buf());
@@ -118,21 +123,29 @@ pub struct EngineConfig {
     pub strict_native: bool,
     pub mode: EngineMode,
 }
+#[cfg(feature="legacy")]
 pub struct Native {
     inner: syousetu_translate::native::NativeTranslator,
 }
+#[cfg(feature="legacy")]
 impl Translator for Native {
     fn translate(&mut self, text: &str) -> Result<String> {
         self.inner.translate(text)
     }
 }
 pub fn create_engine(c: &EngineConfig) -> Result<Box<dyn Translator>> {
+    #[cfg(not(feature="legacy"))]
+    let _ = (&c.eztrans_dir,&c.native_dictionary,c.strict_native);
     match c.mode {
+        #[cfg(not(feature="legacy"))]
+        EngineMode::Native | EngineMode::EzTrans => bail!("기존 엔진은 legacy 기능 빌드가 필요합니다. 기본 내부 INT8 엔진을 사용해 주세요"),
         EngineMode::Passthrough => Ok(Box::new(Passthrough)),
+        #[cfg(feature="legacy")]
         EngineMode::Native => Ok(Box::new(Native {
             inner: syousetu_translate::native::NativeTranslator::new(
                 c.native_dictionary.as_deref(), c.strict_native)?,
         })),
+        #[cfg(feature="legacy")]
         EngineMode::EzTrans => {
             let path = resolve_engine_dir(c.eztrans_dir.as_deref())?;
             Ok(Box::new(EzTrans::open(&path)?))
@@ -144,6 +157,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature="legacy")]
     fn explicit_engine_dir_is_not_overridden() {
         let path = Path::new("custom-eztrans-path");
         assert_eq!(resolve_engine_dir(Some(path)).unwrap(), path);
@@ -158,6 +172,7 @@ mod tests {
         assert_eq!(engine.translate("原文").unwrap(), "原文");
     }
     #[test]
+    #[cfg(feature="legacy")]
     fn native_engine_does_not_require_vendor_dll_or_dat() {
         let mut engine = create_engine(&EngineConfig {
             eztrans_dir: Some(PathBuf::from("intentionally-nonexistent")),
