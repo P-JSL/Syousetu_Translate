@@ -3647,7 +3647,7 @@ dependencies = [
 
 [[package]]
 name = "syousetu-translate"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "aho-corasick",
  "anyhow",

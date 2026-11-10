@@ -1,6 +1,6 @@
 # Syousetu Translate — Rust migration
 
-**v0.3.3: Batched Rust CPU inference, 32 default translation contexts, live TXT output and a compressed Japanese–Korean core glossary. Windows x64 portable release; Linux x64 source builds.**
+**v0.3.4: Japanese contractions and dialogue handling, exact full-vocabulary CPU optimizations, live TXT output and compressed Japanese–Korean corrections. Windows x64 portable release; Linux x64 source builds.**
 
 This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
 
@@ -45,18 +45,22 @@ appears directly at its `.txt` path and is flushed as ordered translations arriv
 Interrupted jobs retain their translated prefix and any original-file backup.
 See [CPU batching, research and validation](docs/cpu-batching.md).
 
-On the recorded four-CPU benchmark, full vocabulary with
+For the earlier v0.3.3 release, on the recorded four-CPU benchmark, full vocabulary with
 `--parallel-mode parallel --jobs 64` reduced complete 35/24-chapter runs by
 **51.5% / 59.4%** versus v0.3.2, with byte-identical bilingual TXT. Default
 capacity remains 32; select 64 for the measured profile. Hardware/input affect
 speed and memory use. Both complete outputs passed source-pair verification.
 
-The development source keeps the full vocabulary and removes the earlier
+v0.3.4 keeps the full vocabulary and removes the earlier
 experimental shortlist after semantic regressions were found. Existing
 `--full-vocabulary` scripts remain supported. CPU attention, bias/ReLU and
 output selection reduce intermediate traffic with reference-output checks;
-projection paths are measured on the actual CPU. The **70% and 90% release gates
-have not been established**. See the [recent research and mathematical review](docs/inference-research-2026-11.md).
+projection paths are measured on the actual CPU. A source-matched development
+measurement took **67.02s / 86.23s** for 35/24 chapters (58.9% / 67.3% shorter
+than the recorded v0.3.2 references). This release includes the current verified
+improvements; **70% and 90% remain subsequent targets**. See the
+[benchmark record](docs/phase2-benchmark.json) and
+[recent research and mathematical review](docs/inference-research-2026-11.md).
 
 Both user-provided ZIPs were downloaded and checked against their SHA-256
 records on 2026-11-03. Their client differences, Rust module mapping, and
