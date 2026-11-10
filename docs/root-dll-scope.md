@@ -1,5 +1,10 @@
 # Top-level J2KEngine.dll (EHND wrapper): migration scope
 
+This page records the original adapter scope. The later request to consider
+full core reconstruction is reviewed separately in
+[eztrans-rust-feasibility.md](eztrans-rust-feasibility.md); the adapter identity
+and the unverified compatibility claims below remain unchanged.
+
 Scope decision: **use the ZIP-root J2KEngine.dll** as the only supported
 proprietary *adapter identity*. Do not silently substitute
 translator/J2KEngine.dll, which is another binary with different exports.

@@ -1,0 +1,368 @@
+{
+  "reviewed_on": "2026-11-10",
+  "status": "candidate-not-adopted; 90-percent-target-not-achieved",
+  "released_version": "v0.3.5",
+  "released_application_commit": "b7403b773a3359dd14c9e666a08fb00b7a5fa3b5",
+  "application_source_changed": false,
+  "release_dependencies_added": [],
+  "model": {
+    "repository": "solavr/small100-ctranslate2-int8",
+    "revision": "3c5af8e17d5c4f35bda849b7ffceaa1dfc62eb84",
+    "base_model": "alirezamsh/small100",
+    "base_revision": "8ab680e26a596d2e3d2d2d17ae0f68df1037328c",
+    "runtime_file_bytes": 344075494,
+    "model_bin_sha256": "24e8b51720b7267cfd8faacedce50128bf11c4327f039632a494deb5e1c421f6",
+    "all_four_runtime_sha256_verified": true,
+    "original_fp32_downloaded": false,
+    "python_used": false
+  },
+  "runtime": {
+    "rust_binding": "ct2rs 0.10.4",
+    "ctranslate2": "4.8.5",
+    "onednn_crate": "onednn-src 0.1.23",
+    "onednn": "3.14.1",
+    "native_backends": [
+      "DNNL",
+      "Ruy"
+    ],
+    "compute_type": "int8_float32",
+    "cuda": false,
+    "mkl": false,
+    "openmp": "compiler",
+    "pure_rust_engine": false,
+    "shipping": false
+  },
+  "conditions": {
+    "cpu": "AMD EPYC 9V45",
+    "cpu_quota": 4,
+    "cpuset": "0-4",
+    "gpu_tested": false,
+    "corpus": "same locally cached complete-work HTML as gate70; no network fetching during inference",
+    "timing": "new process through model SHA verification/loading, HTML parsing, header/body translation and StreamingFile.finish (flush/fsync)",
+    "os_file_cache_cleared": false,
+    "learned_or_bundled_corrections_used": false,
+    "cache_capacity": 1024,
+    "beam": 1,
+    "no_repeat_ngram_size": 3,
+    "full_base_vocabulary": true,
+    "source_piece_limit": 192,
+    "no_silent_input_or_generation_truncation": true,
+    "replicates_per_candidate": 1,
+    "concurrent_cpu_build_or_test": false,
+    "caveats": [
+      "The probe eagerly parses all selected chapters; the application uses bounded source prefetch.",
+      "The probe uses fixed input-row windows; the application refills active logical contexts across empty/cached rows.",
+      "The probe rejects a generation-limit result instead of implementing the application's split-and-retry recovery.",
+      "These single exploratory samples do not establish a universal runtime ranking or average-PC performance."
+    ]
+  },
+  "release_median_seconds": {
+    "chapters35": 48.543418098,
+    "chapters24": 70.689121024
+  },
+  "reference_v032_seconds": {
+    "chapters35": 163.110703742,
+    "chapters24": 263.901530639
+  },
+  "gate90_maximum_seconds": {
+    "chapters35": 16.3110703742,
+    "chapters24": 26.3901530639
+  },
+  "runs": [
+    {
+      "configuration": "one replica, four threads, AVX2, 128 input rows",
+      "chapters": 35,
+      "threads_per_replica": 4,
+      "replicas": 1,
+      "batch_examples": 128,
+      "source_window_rows": 128,
+      "seconds": 91.275177142,
+      "peak_rss_kib": 795148,
+      "exit_code": 0,
+      "bytes": 605235,
+      "complete": true,
+      "korean_lines": 3299,
+      "nonempty_source_lines": 3354,
+      "semantic_accuracy_certified": false,
+      "sha256": "8094e364d4eb4c289f615d4ba16d9847e36221d95dca0ee3fdc40fbcacc32ba6",
+      "source_lines": 6248,
+      "time_ratio_to_release_median": 1.8802791545855435,
+      "gate90_time_passed": false
+    },
+    {
+      "configuration": "four replicas, one thread each, AVX512, 1024 input rows",
+      "chapters": 35,
+      "threads_per_replica": 1,
+      "replicas": 4,
+      "batch_examples": 128,
+      "source_window_rows": 1024,
+      "seconds": 84.946755249,
+      "peak_rss_kib": 2803556,
+      "exit_code": 0,
+      "bytes": 605357,
+      "complete": true,
+      "korean_lines": 3301,
+      "nonempty_source_lines": 3354,
+      "semantic_accuracy_certified": false,
+      "sha256": "be30cc95e8ddfd477ef96b4e8fa65c2a932532a63661bc2eb1cbd1c315fe39ad",
+      "source_lines": 6248,
+      "time_ratio_to_release_median": 1.7499129352100535,
+      "gate90_time_passed": false
+    },
+    {
+      "configuration": "four replicas, one thread each, AVX512, 1024 input rows",
+      "chapters": 24,
+      "threads_per_replica": 1,
+      "replicas": 4,
+      "batch_examples": 128,
+      "source_window_rows": 1024,
+      "seconds": 101.590542153,
+      "peak_rss_kib": 2631892,
+      "exit_code": 0,
+      "bytes": 938621,
+      "complete": true,
+      "korean_lines": 8456,
+      "nonempty_source_lines": 8533,
+      "semantic_accuracy_certified": false,
+      "sha256": "20b62b2dec8ff47836d27375a3fc5aa3c37c77909623ab4de6b62b5cf8ae5c20",
+      "source_lines": 17041,
+      "time_ratio_to_release_median": 1.43714535817341,
+      "gate90_time_passed": false
+    }
+  ],
+  "holdout": {
+    "authored_cases": 26,
+    "specific_checks": [
+      {
+        "name": "knowledge_negation",
+        "case": 1,
+        "rust_passed": true,
+        "ctranslate2_passed": true
+      },
+      {
+        "name": "completed_regret_aspect",
+        "case": 2,
+        "rust_passed": true,
+        "ctranslate2_passed": true
+      },
+      {
+        "name": "hearing_negation",
+        "case": 3,
+        "rust_passed": true,
+        "ctranslate2_passed": true
+      },
+      {
+        "name": "read_ahead_request_register",
+        "case": 5,
+        "rust_passed": true,
+        "ctranslate2_passed": false
+      },
+      {
+        "name": "obligation",
+        "case": 6,
+        "rust_passed": true,
+        "ctranslate2_passed": true
+      },
+      {
+        "name": "polite_happiness",
+        "case": 8,
+        "rust_passed": true,
+        "ctranslate2_passed": true
+      },
+      {
+        "name": "negative_request",
+        "case": 13,
+        "rust_passed": true,
+        "ctranslate2_passed": false
+      }
+    ],
+    "rust_passed_specific_checks": 7,
+    "ctranslate2_passed_specific_checks": 5,
+    "general_quality_certified": false,
+    "generated_output_saved_to_training_memory": false,
+    "cases": [
+      {
+        "case": 1,
+        "japanese": "「そんなこと、俺は知らねえよ！」",
+        "rust": "“그런거야, 난 모르겠다!”",
+        "ctranslate2": "“그런데, 난 모르겠다!”"
+      },
+      {
+        "case": 2,
+        "japanese": "「もう全部食べちゃったんだよ……」",
+        "rust": "“그럼 이제 다 먹어버렸어……”",
+        "ctranslate2": "“그럼 이제 다 먹어버렸어……”"
+      },
+      {
+        "case": 3,
+        "japanese": "「何も聞いてないんだよ！」",
+        "rust": "“그런데 아무것도 듣지 못했어!”",
+        "ctranslate2": "“그런데 아무것도 들리지 않아!”"
+      },
+      {
+        "case": 4,
+        "japanese": "「こんなの、私には無理だよ……」",
+        "rust": "“그런데, 나도 못할 거야……”",
+        "ctranslate2": "“그런데, 난 할 수 없어……”"
+      },
+      {
+        "case": 5,
+        "japanese": "「明日までに読んどいてくれない？」",
+        "rust": "“내일까지 읽어 놔 줄래?”",
+        "ctranslate2": "“내일까지 읽어주십시오?”"
+      },
+      {
+        "case": 6,
+        "japanese": "「そんなに急がなくちゃいけないの？」",
+        "rust": "“그렇게 서둘러야 해?”",
+        "ctranslate2": "“그렇게 서둘러야 할까요?”"
+      },
+      {
+        "case": 7,
+        "japanese": "「あの、少しだけ待っていただけますか？」",
+        "rust": "“그럼 조금만 기다릴 수 있나요?”",
+        "ctranslate2": "“그럼 잠시 기다릴 수 있나요?”"
+      },
+      {
+        "case": 8,
+        "japanese": "「本当に、あなたが来てくれて嬉しいです。」",
+        "rust": "“너가 오셔서 정말 기뻐요.”",
+        "ctranslate2": "“당신이 와서 정말 기뻐요.”"
+      },
+      {
+        "case": 9,
+        "japanese": "「陛下、ご命令をお待ちしております。」",
+        "rust": "“우리 영광스럽게도, 당신의 명령을 기다리고 있습니다.”",
+        "ctranslate2": "“우리 위대함, 당신의 명령을 기다리고 있습니다.”"
+      },
+      {
+        "case": 10,
+        "japanese": "彼は何も言わずに立ち上がりました。",
+        "rust": "그는 아무 말도 하지 않고 일어나고 있었다.",
+        "ctranslate2": "그는 아무 말도 하지 않고 일어섰다."
+      },
+      {
+        "case": 11,
+        "japanese": "彼は少し考えてから、静かに扉を開けた。",
+        "rust": "잠시 생각해 보니 조용히 문을 열었다.",
+        "ctranslate2": "잠시 생각해 보니 조용히 문을 열었다."
+      },
+      {
+        "case": 12,
+        "japanese": "（どうして、こんなことになったんだろう……）",
+        "rust": "(왜 이런 일이 일어났을까……)",
+        "ctranslate2": "(그럼 왜 이런 일이 일어난 거야……)"
+      },
+      {
+        "case": 13,
+        "japanese": "「ねえ、そんな顔しないでよ。」",
+        "rust": "“그런 얼굴을 하지 마.”",
+        "ctranslate2": "“그렇지 않아, 그런 얼굴을 써라.”"
+      },
+      {
+        "case": 14,
+        "japanese": "「それ、昨日も言ってたじゃん。」",
+        "rust": "“그렇다면 어제도 말했지?”",
+        "ctranslate2": "“그건 어제도 말했어?”"
+      },
+      {
+        "case": 15,
+        "japanese": "「今日はもう帰らなきゃいけないんだよ。」",
+        "rust": "“오늘은 집으로 가야 해.”",
+        "ctranslate2": "“오늘은 이제 집으로 가야 해.”"
+      },
+      {
+        "case": 16,
+        "japanese": "あの時の言葉が、どうしても頭から離れなかった。",
+        "rust": "그때의 말은 머리에서 멀어지지 않았다.",
+        "ctranslate2": "그때의 말은 머리에서 멀리 떨어져 있지 않았다."
+      },
+      {
+        "case": 17,
+        "japanese": "彼はまだ帰っていません。",
+        "rust": "그는 아직 집에 오지 않았습니다.",
+        "ctranslate2": "그는 아직 돌아오지 않았습니다."
+      },
+      {
+        "case": 18,
+        "japanese": "彼はもう帰りました。",
+        "rust": "그는 이미 돌아왔다.",
+        "ctranslate2": "그는 이미 돌아왔다."
+      },
+      {
+        "case": 19,
+        "japanese": "ここで待たなければならない。",
+        "rust": "여기서 기다려야 한다.",
+        "ctranslate2": "여기서 기다려야 한다."
+      },
+      {
+        "case": 20,
+        "japanese": "ここで待たなくてもいい。",
+        "rust": "여기서 기다릴 필요가 없다.",
+        "ctranslate2": "여기서 기다릴 필요가 없다."
+      },
+      {
+        "case": 21,
+        "japanese": "薬を飲んではいけない。",
+        "rust": "약을 마시지 마십시오.",
+        "ctranslate2": "약을 마시지 마십시오."
+      },
+      {
+        "case": 22,
+        "japanese": "薬を飲んでもいい。",
+        "rust": "약을 마셔도 될 수 있다.",
+        "ctranslate2": "약을 마셔도 되죠."
+      },
+      {
+        "case": 23,
+        "japanese": "一度も行ったことがありません。",
+        "rust": "한 번도 가본 적이 없었다.",
+        "ctranslate2": "한 번도 가본 적이 없다."
+      },
+      {
+        "case": 24,
+        "japanese": "会議は午後3時に始まり、午後4時に終わります。",
+        "rust": "회의는 오후 3시부터 시작하고 오후 4시까지 끝납니다.",
+        "ctranslate2": "회의는 오후 3시부터 시작하고 오후 4시까지 끝납니다."
+      },
+      {
+        "case": 25,
+        "japanese": "アキラはリンゴを3個買いました。",
+        "rust": "아키라는 사과를 세 개를 구입했다.",
+        "ctranslate2": "아키라는 애플을 세 개 구입했다."
+      },
+      {
+        "case": 26,
+        "japanese": "私は彼女が来ないとは言っていない。",
+        "rust": "나는 그녀가 오지 않을 것이라고 말하지 않는다.",
+        "ctranslate2": "나는 그녀가 오지 않을 것이라고 말하지 않는다."
+      }
+    ]
+  },
+  "decision": "Keep the released Rust/Candle engine; do not add a production C++ runtime, replace the model, or label a release as 90 percent faster based on these results.",
+  "tool_validation": {
+    "release_build_locked": "passed",
+    "clippy_release_all_targets_deny_warnings": "passed",
+    "format_check": "passed",
+    "authored_holdout_matches_measured_prototype": true,
+    "promoted_tool_single_chapter": {
+      "complete": true,
+      "chapters": 1,
+      "source_lines": 217,
+      "nonempty_source_lines": 128,
+      "korean_lines": 128,
+      "bytes": 21225,
+      "sha256": "9e61ff2ce3de2abd57a803af56030e6f9a1d5d1bbec84041f5453eea01b4fb7f"
+    },
+    "tampered_model_sha_rejected_before_inference": true,
+    "production_dependency_graph_contains_ctranslate2": false,
+    "production_source_and_manifests_unchanged": true
+  },
+  "isolated_research_tool": "tools/inference_bench",
+  "measured_prototype": {
+    "tuned_novel_binary_sha256": "be81c92179be19b66e93f418eaed3b968b084c6164d7be4f3d24e5cb3c8a8368",
+    "text_binary_sha256": "0a4b372538aaa390e0d2c793db616ea3fda023c67fe3b74b021e7564d5411d89",
+    "first_run_binary_sha256": null,
+    "note": "Timings preceded promotion of the local Rust probe into the isolated tool. The promoted tool splits shared code into a library and verifies the text probe assets; it is not claimed to be the identical measured executable."
+  }
+}

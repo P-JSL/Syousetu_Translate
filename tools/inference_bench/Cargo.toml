@@ -1,0 +1,30 @@
+[package]
+name = "syousetu-inference-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+autobins = false
+
+# Deliberately outside the application build and its release dependency graph.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+ct2rs = { version = "=0.10.4", default-features = false, features = ["dnnl", "ruy", "openmp-runtime-comp"] }
+onednn-src = { version = "=0.1.23", default-features = false, features = ["inference"] }
+sentencepiece-rs = "=0.2.2"
+serde_json = "1"
+syousetu-translate = { path = "../..", default-features = false }
+
+[[bin]]
+name = "syousetu-bench-novel"
+path = "src/bin/novel.rs"
+
+[[bin]]
+name = "syousetu-bench-text"
+path = "src/bin/text.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 8
+strip = "symbols"
