@@ -17,6 +17,14 @@
   "cross_hardware_mean": false,
   "gate70_passed": false,
   "gate90_passed": false,
+  "additional_validation": {
+    "forced_avx2": "Three Q8 numeric tests plus real-model dialogue and serial/batch tests passed; wording can differ by CPU backend",
+    "independent_parser_comparison": {
+      "reference": "v0.3.3 release executable, passthrough bilingual output",
+      "chapters35": "6759 nonblank output rows retained in order; 12 echoed/source rows differ only in boundary ASCII spaces (6 source rows); no content changes",
+      "chapters24": "17116 nonblank output rows exactly identical in content and order"
+    }
+  },
   "samples": [
     {
       "work_url": "https://kakuyomu.jp/works/11054822663814504924",

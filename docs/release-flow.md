@@ -30,6 +30,5 @@ for model maintenance, and `model-smoke` for an explicit model validation. The
 application payload excludes source archives, legacy binaries, maintainer tools,
 unused DLLs, training frameworks and private novel text.
 
-Current speed-target work must still satisfy the user's 70%/90% full-work gates
-and preserve quality. Authorization to release is already granted; no further
-confirmation is needed when the concrete release passes those conditions.
+Current speed-target work must still satisfy the recorded 70%/90% full-work
+gates and preserve quality before being labeled as achieving those targets.

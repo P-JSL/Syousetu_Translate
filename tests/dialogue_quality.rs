@@ -30,7 +30,11 @@ fn unseen_contractions_keep_obligation_negation_aspect_and_speech_level() {
     )
     .unwrap();
     let outputs = engine.translate_lines(&sources).unwrap();
-    assert!(outputs[0].contains("모르"));
+    assert!(
+        outputs[0].contains("모르") || outputs[0].contains("몰라"),
+        "knowledge negation: {}",
+        outputs[0]
+    );
     assert!(outputs[1].contains("먹어버렸어") && !outputs[1].contains("먹어봤"));
     assert!(outputs[2].contains("못") || outputs[2].contains("않"));
     assert!(outputs[3].contains("읽어") && outputs[3].contains("줄래"));
