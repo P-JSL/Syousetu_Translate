@@ -1,0 +1,52 @@
+{
+  "measured_at_date_utc": "2026-11-10",
+  "implementation_commit": "5567336b774386eec177fc22c43bb0f821db83a6",
+  "binary_sha256": "a8e718ee9196a28fc3b54accbacc343b5d57c2cfc6c0ab11fbe366a42218466c",
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "model": "SMaLL-100 Q8_0, unchanged prepared weights and tokenizer",
+  "platform": "Linux x86_64, AMD EPYC 9V45, CPU quota 4; GPU unavailable",
+  "logical_contexts": 64,
+  "parallel_mode": "parallel",
+  "vocabulary": "full",
+  "learning": false,
+  "html": "same cached index and all episode pages; network excluded",
+  "timing_scope": "cold process through model verification/loading, parsing, translation and final live TXT save",
+  "cpu_builds_concurrent": false,
+  "reference": "recorded v0.3.2 full-work references in gate50-benchmark.json",
+  "repeated_samples": false,
+  "cross_hardware_mean": false,
+  "gate70_passed": false,
+  "gate90_passed": false,
+  "samples": [
+    {
+      "work_url": "https://kakuyomu.jp/works/11054822663814504924",
+      "chapters": 35,
+      "reference_seconds": 163.110703742,
+      "seconds": 67.018822015,
+      "peak_rss_kib": 1095840,
+      "source_lines": 6248,
+      "nonempty_source_lines": 3354,
+      "korean_lines": 3297,
+      "bytes": 607263,
+      "sha256": "cab9e0b2d556a7d979fbae8cdad652647a3c691297a4edace8aca81d208285d6",
+      "time_reduction_percent": 58.91206372268072,
+      "structural_verification": "all original/translation rows and chapter order checked",
+      "semantic_accuracy_certified": false
+    },
+    {
+      "work_url": "https://kakuyomu.jp/works/16818622176193367283",
+      "chapters": 24,
+      "reference_seconds": 263.901530639,
+      "seconds": 86.225821013,
+      "peak_rss_kib": 1042132,
+      "source_lines": 17041,
+      "nonempty_source_lines": 8533,
+      "korean_lines": 8457,
+      "bytes": 938165,
+      "sha256": "3dbae5872c1e8878d901e8e8156b2a33dcaf9a6144f2ee3065443a79a3fcf96b",
+      "time_reduction_percent": 67.32651727929866,
+      "structural_verification": "all original/translation rows and chapter order checked",
+      "semantic_accuracy_certified": false
+    }
+  ]
+}

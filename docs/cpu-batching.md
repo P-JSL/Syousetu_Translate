@@ -165,6 +165,26 @@ are prototype measurements, not the final full-vocabulary release gate.
 Output differences are not evidence of improved semantic quality. **70% has not
 yet been established**; further work follows the 50% release.
 
+## Phase 2 development measurement
+
+The exact implementation commit and executable/model hashes are recorded in
+[phase2-benchmark.json](phase2-benchmark.json). On the same four-CPU allocation,
+64 contexts, full vocabulary, cached HTML and no correction memory, complete
+cold-process runs through live TXT save took **67.02 seconds for 35 chapters**
+and **86.23 seconds for 24 chapters**. Relative to the recorded v0.3.2 references,
+these are **58.9% and 67.3% shorter**. Each is one full-work measurement, not a
+multiple-PC mean or a guaranteed improvement on every device.
+
+All 35/24 chapters and every nonempty original/translation pair passed structural
+verification (3,354/8,533 nonempty source rows). New paragraph and prose handling
+intentionally changes formatting/wording from v0.3.3; equality to the old TXT is
+not asserted. Structural completeness does not certify literary accuracy.
+The **70% and 90% gates remain unmet**, so this change is not labeled a release
+that achieved either target. The separate authored model regression suite checks
+contractions, obligation, negation, requests and speech levels without memory hits.
+
+## Saved output verification
+
 Verify every saved original/translation pair, empty line and chapter boundary
 offline with the Rust helper (default title format, `--japanese`, no furigana):
 
