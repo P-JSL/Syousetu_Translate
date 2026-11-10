@@ -28,15 +28,15 @@ pub(super) struct Cursor {
 impl Cursor {
     pub(super) fn new(index: usize, source: &str, runner: &Runner) -> Result<Self> {
         let mut pieces = VecDeque::new();
-        if let Some(corrected) = runner.memory.lookup(source) {
-            pieces.push_back(Piece::Literal(corrected.to_owned()));
+        if let Some(corrected) = runner.memory.resolve(source) {
+            pieces.push_back(Piece::Literal(corrected.into_owned()));
         } else {
             for (line_index, line) in source.split('\n').enumerate() {
                 if line_index > 0 {
                     pieces.push_back(Piece::Literal("\n".into()));
                 }
-                if let Some(corrected) = runner.memory.lookup(line) {
-                    pieces.push_back(Piece::Literal(corrected.to_owned()));
+                if let Some(corrected) = runner.memory.resolve(line) {
+                    pieces.push_back(Piece::Literal(corrected.into_owned()));
                 } else if !crate::offline::text::japanese(line) {
                     pieces.push_back(Piece::Literal(line.to_owned()));
                 } else {
@@ -45,8 +45,8 @@ impl Cursor {
                         if part_index > 0 {
                             pieces.push_back(Piece::Literal(" ".into()));
                         }
-                        if let Some(corrected) = runner.memory.lookup(&part.text) {
-                            pieces.push_back(Piece::Literal(corrected.to_owned()));
+                        if let Some(corrected) = runner.memory.resolve(&part.text) {
+                            pieces.push_back(Piece::Literal(corrected.into_owned()));
                         } else {
                             pieces.push_back(Piece::Generate(part));
                         }

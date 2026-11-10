@@ -16,7 +16,8 @@ blocks and scalar-compatible SIMD activation packing.
 | `src/translation/filter/` | Literal dictionary parsing, character handling, protected replacements and Korean particle selection |
 | `src/translation/session/` | Private session state, subprocess ownership and bounded JSON protocol |
 | `src/offline/` | Builder, CPU budget, policy, shared bounded result cache and duplicate batch restoration |
-| `src/offline/runner/` | Sentence generation, repetition guard and borrowed-logit selection |
+| `src/offline/runner/` | Sentence generation and repetition guard |
+| `src/offline/selection/` | Exact borrowed-logit selection and gated SIMD |
 | `src/offline/runner/batched/` | Iteration scheduling, plan pieces, private generation state and ordered completion |
 | `src/offline/model/` | Model configuration, transformer layers and isolated CPU operations |
 | `src/models/` | Cached manifests, portable discovery, verification and resumable download transport |
@@ -68,7 +69,7 @@ flowchart TD
   optional vendor ABI boundaries.
   Both entry points forbid unsafe code.
 - **Concurrent state:** workers own attention caches; weights/tokenizer/memory
-  snapshots are shared immutably. Up to 64 logical contexts share a bounded Rayon
+  snapshots are shared immutably. Up to 256 logical contexts share a bounded Rayon
   compute pool. Result-cache mutation and source-order emission stay with the
   coordinator; progress remains monotonic.
 
@@ -128,5 +129,18 @@ the persisted initialization flag prevents deleted defaults from reappearing.
 New profiles use `corrections.json.zlib`; existing JSON profiles remain readable.
 `--no-learning` uses an empty correction snapshot. This adaptation is translation
 memory, not neural-weight training or a guarantee of fluent output for unseen text.
+
+The separate 112-entry speech snapshot is 1,425 compressed bytes and migrates
+once using `speech_revision`, preserving user edits and deletions.
+`translation/prose/` owns Japanese contractions/intent, reviewed Korean endings
+and typography; source-qualified model output changes occur before user term
+corrections. `novel/site/dom/body.rs` owns semantic HTML line boundaries.
+`offline/model/projection.rs` measures exact full-vocabulary dense/streamed
+selection paths by row-count bucket; selection and SIMD are shared under
+`offline/selection/`. CPU attention and bias/ReLU fusion live under
+`offline/model/ops/`. The approximate vocabulary module has been removed.
+Logical capacity now supports 1–256 while the default remains 32 and compute
+threads retain their independent CPU cap. See [dialogue behavior](dialogue-and-contractions.md)
+and [recent inference research](inference-research-2026-11.md).
 
 See [the supplied-resource audit](resource-audit.md) for import scope and exclusions.

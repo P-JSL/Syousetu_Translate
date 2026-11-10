@@ -1,8 +1,10 @@
-# CPU batching, live output and validation (0.3.3)
+# CPU batching, live output and validation
 
 The prepared SMaLL-100 Q8_0 model and tokenizer are unchanged. The default
-full-vocabulary decoder improves CPU execution and scheduling. An additional
-Korean-focused vocabulary mode is experimental and must be enabled explicitly.
+full-vocabulary decoder improves CPU execution and scheduling. The earlier
+Korean-focused shortlist has been removed from development source after meaning
+regressions were observed. Historical v0.3.3 measurements are retained below.
+Current work is described in [the November research review](inference-research-2026-11.md).
 All application, inference, glossary packing and new validation code is Rust.
 
 ## Applied research
@@ -27,8 +29,8 @@ previously adapted from `gacha_pickup_calculator`.
 
 ## Contexts, compute and numerical boundaries
 
-- Default capacity is **32 logical contexts**; `--jobs 1..64` supports 16, 32 and
-  64 explicitly. One Rayon pool is capped by available CPUs and the requested
+- Default capacity is **32 logical contexts**; `--jobs 1..256` supports 16, 32,
+  64 and larger optional capacities. One Rayon pool is capped by available CPUs and the requested
   CPU budget. A four-CPU host with 32 contexts still uses four compute threads.
   The CLI sets `CANDLE_NUM_THREADS=1` before creating threads so the legacy
   kernel barrier pool does not add another compute pool. Library embedders can
@@ -64,27 +66,19 @@ previously adapted from `gacha_pickup_calculator`.
 
 `auto` compares full serial/batch sample outputs and timings before selecting
 batch execution. Explicit `parallel` skips that calibration. Tests compare
-serial/batch results at 2/16/32/64 contexts, including variable-length text,
+serial/batch results at 2/16/32/64/128/256 contexts, including variable-length text,
 multiline input, duplicates and literal lines. Equal saved files establish
 tested execution consistency, not literary translation accuracy or universal
 floating-point identity across CPUs.
 
-## Optional Korean-focused vocabulary
+## Retired shortlist prototype
 
-Enable **한국어 중심 고속 어휘** in settings or pass `--fast-vocabulary`.
-The default remains full vocabulary; `--full-vocabulary` overrides a saved fast
-setting. The optional mode retains Korean pieces, punctuation/digits, short
-Latin pieces, source BPE IDs and alternate source-name substrings. Candidate
-rows are copied byte-for-byte from the prepared Q8 matrix, without conversion.
-EOS and original token IDs are retained; padding rows are excluded from greedy
-selection. Embedding lookup still uses the complete original matrix.
-
-This reduces projection work but can suppress a token that would win in the
-full model. Rare foreign spellings and translations can change. Candidate scope
-is the current input batch; changing that scope can change output. Result caches
-are cleared when the candidate ID set changes. Serial/batch checks in this mode
-compare the same candidate scope; they do not establish equivalence to full
-vocabulary or improved semantic accuracy. It is disabled by default.
+The opt-in shortlist from v0.3.3 reduced projection work but changed units,
+names and meanings in inspected examples. Current source removes the option,
+candidate gathering, mapped heads and their cache scope. `--fast-vocabulary`
+returns a clear retirement error; `--full-vocabulary` remains compatible with
+existing scripts. Earlier prototype timings below are historical evidence,
+not a quality-preserving acceleration or an available development-source mode.
 
 ## Live TXT and compressed dictionary
 
@@ -128,8 +122,8 @@ syousetu-translate download --url WORK_URL --html index.html \
 The reference v0.3.2 invocation requests 16 workers, which its old backend caps
 at four; the new backend uses 32/64 logical contexts on the same four compute
 CPUs. The comparison measures the complete batching change, not a change in
-model or available CPU allocation. Use `--fast-vocabulary` only for the optional
-approximate comparison.
+model or available CPU allocation. Approximate timings below refer to a removed
+prototype and cannot be reproduced through the current production interface.
 
 The two user-specified works are
 [35 chapters](https://kakuyomu.jp/works/11054822663814504924) and

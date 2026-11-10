@@ -2,7 +2,7 @@
 //! Logical contexts share a bounded Rayon pool, weights and tokenizer. Each
 //! context owns its decoder KV cache, token history and original source index.
 mod plan;
-use super::{generation::repeated_trigram_tokens, selection, Runner};
+use super::{generation::repeated_trigram_tokens, Runner};
 use crate::offline::{model::Model, ordered};
 use anyhow::{bail, Result};
 use plan::{Cursor, State};
@@ -143,6 +143,11 @@ fn run(
             .iter()
             .map(|state| state.encoder.clone())
             .collect::<Vec<_>>();
+        let blocked = states
+            .iter()
+            .map(|state| repeated_trigram_tokens(&state.output))
+            .collect::<Vec<_>>();
+        let vocab = runners[0].tokenizer.vocab.len();
         let scores = {
             let mut models = runners
                 .iter_mut()
@@ -158,22 +163,16 @@ fn run(
                         .map(|_| &mut runner.model)
                 })
                 .collect::<Vec<_>>();
-            pool.install(|| Model::decode_many(&mut models, &inputs, &past, &encoders))?
+            pool.install(|| {
+                Model::decode_many(&mut models, &inputs, &past, &encoders, vocab, &blocked)
+            })?
         };
         for (row, &slot) in active.iter().enumerate() {
             let runner = &mut runners[slot];
             let cursor = cursors[slot].as_mut().unwrap();
             let part = cursor.part.as_mut().unwrap();
             let state = part.state.as_mut().unwrap();
-            let blocked = repeated_trigram_tokens(&state.output);
-            let logits = scores.narrow(0, row, 1)?.squeeze(0)?;
-            let next = selection::select_logits_mapped(
-                &logits,
-                runner.tokenizer.vocab.len(),
-                runner.config.eos_token_id,
-                &blocked,
-                runner.model.head_ids(),
-            )?;
+            let next = scores[row];
             state.past += 1;
             let completed =
                 if next == runner.config.eos_token_id {
@@ -181,7 +180,10 @@ fn run(
                     if decoded.is_empty() && part.encoded.text.chars().any(char::is_alphabetic) {
                         bail!("모델이 빈 번역을 생성했습니다");
                     }
-                    Some(decoded)
+                    Some(crate::translation::prose::finish(
+                        &part.encoded.text,
+                        &decoded,
+                    ))
                 } else {
                     state.output.push(next);
                     state.input = next;

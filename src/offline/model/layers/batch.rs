@@ -30,7 +30,7 @@ impl Layer {
         let x = (x + self.attention.out.forward(&context)?)?;
         let ff = self
             .ff2
-            .forward(&self.ff1.forward(&x.apply(&self.ff_norm)?)?.relu()?)?;
+            .forward(&self.ff1.forward_relu(&x.apply(&self.ff_norm)?)?)?;
         x + ff
     }
 
@@ -132,12 +132,9 @@ impl Layer {
                 .expect("decoder cross attention")
                 .out
                 .forward(&context)?)?;
-        let ff = layers[0].ff2.forward(
-            &layers[0]
-                .ff1
-                .forward(&x.apply(&layers[0].ff_norm)?)?
-                .relu()?,
-        )?;
+        let ff = layers[0]
+            .ff2
+            .forward(&layers[0].ff1.forward_relu(&x.apply(&layers[0].ff_norm)?)?)?;
         x + ff
     }
 }

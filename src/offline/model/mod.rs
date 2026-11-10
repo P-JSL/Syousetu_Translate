@@ -10,13 +10,12 @@ mod config;
 mod layers;
 #[allow(unsafe_code)]
 mod ops;
+mod projection;
 use self::ops::{layer_norm, LayerNorm};
-use super::vocabulary::Head;
 use crate::int8::Weights;
 use candle_core::{quantized::QMatMul, DType, Device, IndexOp, Module, Result, Tensor};
 pub(super) use config::Config;
 use layers::Layer;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Model {
@@ -27,7 +26,7 @@ pub struct Model {
     encoder_norm: LayerNorm,
     decoder: Vec<Layer>,
     decoder_norm: LayerNorm,
-    head: Option<Arc<Head>>,
+    greedy: projection::Projection,
 }
 impl Model {
     pub fn new(cfg: &Config, vb: Weights) -> Result<Self> {
@@ -63,7 +62,6 @@ impl Model {
             .map(|i| Layer::new(cfg, true, vb.pp(format!("decoder.layers.{i}"))))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            head: None,
             config: cfg.clone(),
             shared,
             positions,
@@ -71,6 +69,7 @@ impl Model {
             decoder,
             encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm"))?,
             decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm"))?,
+            greedy: projection::Projection::default(),
         })
     }
     fn embed(&self, ids: &[u32], past: usize) -> Result<Tensor> {
@@ -147,7 +146,7 @@ impl Model {
             .apply(&self.decoder_norm)?
             .i((0, length - 1))?
             .unsqueeze(0)?;
-        self.project(&last)?.squeeze(0)
+        self.shared.forward(&last)?.squeeze(0)
     }
     pub fn reset(&mut self) {
         for layer in self.encoder.iter_mut().chain(self.decoder.iter_mut()) {
@@ -186,7 +185,9 @@ impl Model {
         inputs: &[u32],
         past: &[usize],
         encoders: &[Tensor],
-    ) -> Result<Tensor> {
+        vocab: usize,
+        blocked: &[std::collections::HashSet<u32>],
+    ) -> Result<Vec<u32>> {
         let positions = past
             .iter()
             .map(|position| (position + 2) as u32)
@@ -200,21 +201,12 @@ impl Model {
             x = Layer::decode_rows(&mut layers, &x, encoders)?;
         }
         let last = x.apply(&models[0].decoder_norm)?.squeeze(0)?;
-        models[0].project(&last)
-    }
-    fn project(&self, x: &Tensor) -> Result<Tensor> {
-        match &self.head {
-            Some(head) => head.matrix.forward(x),
-            None => self.shared.forward(x),
-        }
-    }
-    pub(super) fn head_ids(&self) -> Option<&[u32]> {
-        self.head.as_ref().map(|head| head.ids.as_slice())
-    }
-    pub(super) fn prepare_head(&self, ids: Vec<u32>) -> Result<Arc<Head>> {
-        Head::gather(&self.shared, ids)
-    }
-    pub(super) fn install_head(&mut self, head: Arc<Head>) {
-        self.head = Some(head);
+        models[0].greedy.forward(
+            &models[0].shared,
+            &last,
+            vocab,
+            models[0].config.eos_token_id,
+            blocked,
+        )
     }
 }

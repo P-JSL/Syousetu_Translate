@@ -74,10 +74,6 @@ impl Desktop {
                 }
             });
         ui.label("자동: 첫 본문 묶음의 속도와 출력 일치를 확인하고 빠른 방식을 선택합니다.");
-        ui.checkbox(
-            &mut self.config.fast_vocabulary,
-            "한국어 중심 고속 어휘 (실험 · 번역 표현이 달라질 수 있습니다)",
-        );
         ui.checkbox(&mut self.config.print_japanese, "일본어 동시 출력");
         ui.checkbox(&mut self.config.include_furigana, "후리가나 포함");
         ui.checkbox(&mut self.config.include_comment, "작가 코멘트 포함");
@@ -111,8 +107,8 @@ impl Desktop {
                 ui.label("재시도 횟수");
                 ui.add(egui::DragValue::new(&mut self.config.max_retry_count).range(0..=10));
                 ui.end_row();
-                ui.label("번역 작업자 수 (-1: 기본 32개, 최대 64개)");
-                ui.add(egui::DragValue::new(&mut self.config.max_cpu_core_count).range(-1..=64));
+                ui.label("번역 작업자 수 (-1: 기본 32개, 최대 256개 · 큰 배치는 메모리를 더 사용)");
+                ui.add(egui::DragValue::new(&mut self.config.max_cpu_core_count).range(-1..=256));
                 ui.end_row();
                 ui.label("파일 제목 최대 길이");
                 ui.add(egui::DragValue::new(&mut self.config.max_title_length).range(1..=255));

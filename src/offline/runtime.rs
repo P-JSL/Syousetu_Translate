@@ -2,10 +2,7 @@ use crate::{learning::Memory, models};
 use anyhow::{bail, Result};
 use std::{fs, path::Path, sync::Arc};
 
-use super::{
-    model, runner::Runner, tokenizer::Tokenizer, OfflineTranslator, ParallelPolicy,
-    VocabularyPolicy,
-};
+use super::{model, runner::Runner, tokenizer::Tokenizer, OfflineTranslator, ParallelPolicy};
 impl OfflineTranslator {
     pub fn builder(root: &Path) -> super::TranslatorBuilder {
         super::TranslatorBuilder::new(root)
@@ -32,7 +29,6 @@ impl OfflineTranslator {
         budget: super::CpuBudget,
         policy: ParallelPolicy,
         workers: usize,
-        vocabulary_policy: VocabularyPolicy,
     ) -> Result<Self> {
         if usize::BITS < 64 {
             bail!("내부 모델은 64비트 실행 파일이 필요합니다");
@@ -47,7 +43,7 @@ impl OfflineTranslator {
             .map(usize::from)
             .unwrap_or(1);
         let budget = budget.get().min(available);
-        let count = workers.clamp(1, 64);
+        let count = workers.clamp(1, 256);
         let load_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .num_threads(budget)
@@ -75,7 +71,6 @@ impl OfflineTranslator {
         }
         eprintln!("직접 일→한 모델 준비 완료 · 작업자 {count}개 / CPU {budget}개 · 교정 문장 {}개 / 용어 {}개",memory.sentences.len(),memory.terms.len());
         Ok(Self {
-            vocabulary_policy,
             runners,
             compute_pool: Arc::clone(&load_pool),
             cache: super::cache::Cache::default(),
@@ -94,27 +89,7 @@ impl OfflineTranslator {
         })
     }
     pub fn translate(&mut self, text: &str) -> Result<String> {
-        if self.vocabulary_policy != VocabularyPolicy::Full {
-            self.prepare_vocabulary(&[text.to_owned()])?;
-        }
         self.translate_prepared(text)
-    }
-    pub(super) fn prepare_vocabulary(&mut self, lines: &[String]) -> Result<()> {
-        if self.vocabulary_policy == VocabularyPolicy::Full
-            || !lines.iter().any(|source| {
-                super::text::japanese(source) && !self.runners[0].has_correction(source)
-            })
-        {
-            return Ok(());
-        }
-        let Some(head) = self.runners[0].head_for_sources(lines)? else {
-            return Ok(());
-        };
-        for runner in &mut self.runners {
-            runner.install_head(Arc::clone(&head));
-        }
-        self.cache = super::cache::Cache::default();
-        Ok(())
     }
     pub(super) fn translate_prepared(&mut self, text: &str) -> Result<String> {
         // The CPU budget is a cap. Short decode operations often run faster

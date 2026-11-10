@@ -28,6 +28,7 @@ pub(super) fn bundled() -> Result<Memory> {
                     super::valid(&term.corrected)?;
                 }
                 super::core_dictionary::apply(&mut memory)?;
+                super::speech::apply(&mut memory)?;
                 Ok(memory)
             })();
             result.map_err(|e| format!("{e:#}"))
@@ -38,6 +39,7 @@ pub(super) fn bundled() -> Result<Memory> {
 pub(super) fn merge(mut user: Memory) -> Result<Memory> {
     if user.defaults_applied {
         super::core_dictionary::apply(&mut user)?;
+        super::speech::apply(&mut user)?;
         return Ok(user);
     }
     let defaults = bundled()?;
@@ -64,6 +66,7 @@ pub(super) fn merge(mut user: Memory) -> Result<Memory> {
     }
     user.defaults_applied = true;
     super::core_dictionary::apply(&mut user)?;
+    super::speech::apply(&mut user)?;
     Ok(user)
 }
 #[cfg(test)]

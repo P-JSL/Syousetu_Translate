@@ -30,6 +30,13 @@ CPU inference changes in `src/quantized/`:
   first signed-maximum selection, round-away-from-zero ties, clamping and block
   sums. Nonfinite/overflow cases fall back to `quantize_q8k_reference`, the
   unchanged scalar algorithm. CPU feature detection gates every SIMD entry.
+- `repack_x86/dual_q8.rs` shares activation broadcasts between two adjacent
+  output tiles, retaining independent output accumulators and group/FMA order.
+- `cpu_top1.rs` and `repack_x86/top1.rs` expose an exact full-vocabulary greedy
+  reduction. It retains EOS, finite filtering, repetition bans, original-ID
+  ties and `f32::total_cmp`, and falls back on unsupported CPUs. Local tile
+  winners avoid materializing the full output-score tensor. The application
+  compares both paths and selects by measured CPU cost, not a heuristic shortlist.
 
 GGUF format, prepared model bytes, attention math and quantization policy are
 unchanged. `tests/quantized_cpu.rs` checks exact blocks/scales/sums against the
@@ -37,4 +44,9 @@ scalar reference, including ties, subnormals and nonfinite input. Actual-model
 serial/batch tests and saved-novel hashes check the application path. These
 checks cover the tested CPUs/workloads; they are not a cross-platform
 floating-point identity guarantee.
+Additional matrix tests change later rows and their order while checking earlier
+score bits; fused selection is checked against the full matrix on row/tile tails,
+ties and blocked winners. Integer range and row-locality reasoning, including
+why low-precision Strassen was not substituted, is in
+`docs/inference-research-2026-11.md` at the repository root.
 Upstream examples, tests and benchmarks are omitted from this source-only copy.

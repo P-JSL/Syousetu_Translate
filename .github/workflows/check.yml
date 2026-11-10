@@ -42,7 +42,7 @@ jobs:
           rustc --edition=2021 tools/release_audit.rs -o target/release-audit.exe
           ./target/release-audit.exe deps
       - name: Test production features
-        run: cargo test --locked --release --features gui --all-targets
+        run: cargo test --locked --release --features gui --lib --bins --tests
       - name: Verify Hugging Face TLS with the Windows trust store
         if: runner.os == 'Windows'
         run: cargo test --locked --release --features gui --lib pinned_huggingface_config_uses_platform_trust -- --ignored

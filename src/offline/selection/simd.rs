@@ -1,4 +1,4 @@
-//! Exact finite argmax using the signed integer keys from f32::total_cmp.
+//! CPU-gated exact finite argmax using the signed keys from f32::total_cmp.
 //! Repetition-blocked winners fall back to the scalar selector in the parent.
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;

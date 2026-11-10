@@ -33,18 +33,27 @@ fn verify(episodes: &[Episode], text: &str) -> Result<(usize, usize, usize)> {
             .get(index + 1)
             .map_or(lines.len(), |(offset, _)| *offset);
         let body = lines.get(start + 2..end).context("missing chapter body")?;
-        ensure!(
-            body.len() >= episode.lines.len() * 2,
-            "missing bilingual lines"
-        );
+        let mut cursor = 0;
         for (row, source) in episode.lines.iter().enumerate() {
+            if source.trim().is_empty() {
+                ensure!(
+                    body.get(cursor).is_some_and(|line| line.trim().is_empty()),
+                    "missing paragraph break at chapter {}, row {}",
+                    index + 1,
+                    row + 1
+                );
+                cursor += 1;
+                counts.0 += 1;
+                continue;
+            }
             ensure!(
-                body[row * 2] == source,
+                body.get(cursor) == Some(&source.as_str()),
                 "original mismatch at chapter {}, row {}",
                 index + 1,
                 row + 1
             );
-            let translation = body[row * 2 + 1];
+            let translation = body.get(cursor + 1).context("missing translated row")?;
+            cursor += 2;
             counts.0 += 1;
             if !source.trim().is_empty() {
                 ensure!(
@@ -58,9 +67,7 @@ fn verify(episodes: &[Episode], text: &str) -> Result<(usize, usize, usize)> {
             }
         }
         ensure!(
-            body[episode.lines.len() * 2..]
-                .iter()
-                .all(|line| line.trim().is_empty()),
+            body[cursor..].iter().all(|line| line.trim().is_empty()),
             "extra chapter body lines"
         );
     }

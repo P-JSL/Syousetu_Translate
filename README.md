@@ -27,14 +27,18 @@ lifecycle, correction storage and optional compatibility code into domain folder
 It embeds 1,058 authored Japanese–Korean headword glosses in 9,144 compressed
 bytes, plus 68 sentence/name corrections and six source-qualified spelling rules
 in 2,424 compressed bytes. Exact headwords keep their representative dictionary
-meanings; full sentences retain neural context. New personal profiles use `corrections.json.zlib`;
+meanings; full sentences retain neural context. A further 112 reviewed spoken
+utterances occupy 1,425 compressed bytes. Source-qualified contractions,
+obligations, requests and Korean speech endings are described in
+[dialogue handling](docs/dialogue-and-contractions.md). New personal profiles use `corrections.json.zlib`;
 existing JSON profiles remain supported. Windows defaults to
 `C:\Users\rabbit\OneDrive\문서` for automatic output and save dialogs.
 See [architecture and invariants](docs/architecture.md) and the
 [supplied dictionary audit/import guide](docs/resource-audit.md).
 
 The internal engine defaults to 32 logical translation contexts; `--jobs 16`,
-`--jobs 32` and `--jobs 64` select the batch capacity. A shared Rayon pool caps
+`--jobs 32` and `--jobs 64` select the batch capacity (up to 256 is supported;
+larger batches use more memory and need not be faster). A shared Rayon pool caps
 actual compute threads at the available CPU budget. Attention/KV state stays
 private while encoder/decoder linear operations run in shared batches. Output
 appears directly at its `.txt` path and is flushed as ordered translations arrive.
@@ -47,10 +51,12 @@ On the recorded four-CPU benchmark, full vocabulary with
 capacity remains 32; select 64 for the measured profile. Hardware/input affect
 speed and memory use. Both complete outputs passed source-pair verification.
 
-An optional **Korean-focused fast vocabulary** limits output projection candidates
-to Korean/punctuation and source-name pieces. It can change translations and is
-disabled by default. Enable it in settings or with `--fast-vocabulary`; use
-`--full-vocabulary` for the original complete output vocabulary.
+The development source keeps the full vocabulary and removes the earlier
+experimental shortlist after semantic regressions were found. Existing
+`--full-vocabulary` scripts remain supported. CPU attention, bias/ReLU and
+output selection reduce intermediate traffic with reference-output checks;
+projection paths are measured on the actual CPU. The **70% and 90% release gates
+have not been established**. See the [recent research and mathematical review](docs/inference-research-2026-11.md).
 
 Both user-provided ZIPs were downloaded and checked against their SHA-256
 records on 2026-11-03. Their client differences, Rust module mapping, and

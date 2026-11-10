@@ -95,11 +95,6 @@ pub(super) fn engine_from_args(
                     .workers(config.workers())
                     .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
                     .parallel_policy(config.parallel_mode.parse()?)
-                    .vocabulary_policy(if config.fast_vocabulary {
-                        crate::offline::VocabularyPolicy::KoreanShortlist
-                    } else {
-                        crate::offline::VocabularyPolicy::Full
-                    })
                     .build()?,
                 progress: flag(args, "--progress-json"),
             }));

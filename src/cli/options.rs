@@ -13,11 +13,6 @@ pub fn settings(args: &[String]) -> Result<Config> {
     };
     for (positive, negative, field) in [
         ("--japanese", "--no-japanese", &mut cfg.print_japanese),
-        (
-            "--fast-vocabulary",
-            "--full-vocabulary",
-            &mut cfg.fast_vocabulary,
-        ),
         ("--furigana", "--no-furigana", &mut cfg.include_furigana),
         (
             "--include-comments",
@@ -39,6 +34,9 @@ pub fn settings(args: &[String]) -> Result<Config> {
         if flag(args, negative) {
             *field = false;
         }
+    }
+    if flag(args, "--fast-vocabulary") {
+        bail!("--fast-vocabulary는 의미 누락이 확인되어 제거되었습니다. 전체 어휘를 사용해 주세요");
     }
     if let Some(title) = value(args, "--title-format") {
         cfg.title_format = title;
@@ -66,8 +64,8 @@ pub fn settings(args: &[String]) -> Result<Config> {
     }
     if value(args, "--jobs").is_some() {
         let jobs = num(args, "--jobs", 1)?;
-        if !(1..=64).contains(&jobs) {
-            bail!("--jobs는 1~64이어야 합니다");
+        if !(1..=256).contains(&jobs) {
+            bail!("--jobs는 1~256이어야 합니다");
         }
         cfg.max_cpu_core_count = jobs as isize;
     }

@@ -21,6 +21,9 @@ impl Linear {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
         self.weight.forward(x)?.broadcast_add(&self.bias)
     }
+    fn forward_relu(&self, x: &Tensor) -> Result<Tensor> {
+        super::ops::bias_relu::forward(&self.weight.forward(x)?, &self.bias)
+    }
 }
 #[derive(Clone)]
 struct Attention {
@@ -105,6 +108,9 @@ impl Attention {
         length: usize,
         mask: Option<&Tensor>,
     ) -> Result<Tensor> {
+        if mask.is_none() {
+            return super::ops::attention::context(&q, &k, &v, (self.head_dim as f64).powf(-0.5));
+        }
         let q = (q * (self.head_dim as f64).powf(-0.5))?;
         let scores = q.matmul(&k.transpose(1, 2)?)?;
         let scores = match mask {
@@ -178,7 +184,7 @@ impl Layer {
         }
         let ff = self
             .ff2
-            .forward(&self.ff1.forward(&x.apply(&self.ff_norm)?)?.relu()?)?;
+            .forward(&self.ff1.forward_relu(&x.apply(&self.ff_norm)?)?)?;
         x + ff
     }
     pub(super) fn reset(&mut self) {

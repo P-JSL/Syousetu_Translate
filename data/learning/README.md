@@ -15,3 +15,10 @@ corrections take precedence. User-owned files remain editable and can override
 defaults. This is translation-memory adaptation; it does not retrain model weights.
 
 Resource scope and importer exclusions: [resource audit](../../docs/resource-audit.md).
+
+`ja-ko-speech.tsv` adds 112 independently authored whole spoken utterances.
+Its versioned zlib JSON is 1,425 bytes and is embedded separately. Generate it
+with `cargo run --locked --example pack_speech`. A persisted revision applies
+these entries once without restoring later user deletions. Quoted/periodless
+whole-utterance aliases do not authorize substring replacement of slang inside
+other sentences. See [dialogue processing](../../docs/dialogue-and-contractions.md).

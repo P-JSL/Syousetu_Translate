@@ -8,7 +8,7 @@ default-run = "syousetu-translate"
 
 [features]
 default = ["offline-model"]
-offline-model = ["dep:candle-core", "dep:sentencepiece-rs", "dep:rayon"]
+offline-model = ["dep:candle-core", "dep:sentencepiece-rs", "dep:rayon", "dep:gemm"]
 model-tools = ["offline-model", "candle-core/safetensors"]
 legacy = ["dep:fancy-regex", "dep:libloading"]
 gui = ["offline-model", "dep:eframe", "dep:tinyfiledialogs"]
@@ -20,6 +20,10 @@ required-features = ["gui"]
 
 [[example]]
 name = "benchmark_offline"
+required-features = ["offline-model"]
+
+[[example]]
+name = "benchmark_projection"
 required-features = ["offline-model"]
 
 [[example]]
@@ -53,6 +57,7 @@ sha2 = "0.10"
 candle-core = { version = "=0.11.1", optional = true, default-features = false }
 sentencepiece-rs = { version = "=0.2.2", optional = true }
 rayon = { version = "1.10", optional = true }
+gemm = { version = "=0.19.0", optional = true, features = ["wasm-simd128-enable"] }
 fs2 = "0.4"
 miniz_oxide = "=0.9.1"
 

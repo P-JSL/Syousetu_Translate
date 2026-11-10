@@ -2,7 +2,7 @@
 #![cfg(feature = "offline-model")]
 use syousetu_translate::{
     learning::Memory,
-    offline::{OfflineTranslator, ParallelPolicy, VocabularyPolicy},
+    offline::{OfflineTranslator, ParallelPolicy},
 };
 
 #[test]
@@ -68,46 +68,8 @@ fn direct_translation_parallel_merge_and_user_corrections() {
 }
 
 #[test]
-#[ignore = "requires pinned local model assets; opt-in lexical mode changes full-vocabulary output"]
-fn shortlist_parallel_agrees_with_serial_and_scope_changes_do_not_reuse_stale_results() {
-    let root = syousetu_translate::models::default_dir();
-    let input = [
-        "私は学生です。",
-        "今日は雨が降っています。",
-        "Alexandraは図書館で本を読んでいます。",
-        "猫が庭を歩いています。",
-        "ASCII 123",
-        "",
-        "私は学生です。",
-    ]
-    .map(str::to_owned);
-    let build = |workers, policy| {
-        OfflineTranslator::builder(&root)
-            .memory(Memory::default())
-            .workers(workers)
-            .parallel_policy(policy)
-            .vocabulary_policy(VocabularyPolicy::KoreanShortlist)
-            .build()
-            .unwrap()
-    };
-    let mut serial = build(1, ParallelPolicy::Serial);
-    let expected = serial.translate_lines(&input).unwrap();
-    drop(serial);
-    let mut parallel = build(32, ParallelPolicy::Parallel);
-    let actual = parallel.translate_lines(&input).unwrap();
-    assert_eq!(actual, expected);
-    assert_eq!(actual[0], actual[6]);
-    assert_eq!(actual[4], "ASCII 123");
-    assert_eq!(actual[5], "");
-    parallel
-        .translate_lines(&["Christopherは駅に到着しました。".to_owned()])
-        .unwrap();
-    assert_eq!(parallel.translate_lines(&input).unwrap(), expected);
-}
-
-#[test]
 #[ignore = "requires pinned local model assets; validates continuous refill and ordered streaming"]
-fn variable_length_contexts_refill_and_stream_in_order_at_16_32_64() {
+fn variable_length_contexts_refill_and_stream_in_order_through_256() {
     let root = syousetu_translate::models::default_dir();
     let input = [
         "私は学生です。",
@@ -139,7 +101,7 @@ fn variable_length_contexts_refill_and_stream_in_order_at_16_32_64() {
     let mut serial = OfflineTranslator::open(&root, Memory::default(), 1).unwrap();
     let expected = serial.translate_lines(&input).unwrap();
     drop(serial);
-    for workers in [2, 16, 32, 64] {
+    for workers in [2, 16, 32, 64, 128, 256] {
         let mut engine = OfflineTranslator::open_with_policy(
             &root,
             Memory::default(),

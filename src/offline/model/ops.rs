@@ -5,6 +5,8 @@
 use crate::int8::Weights;
 use candle_core::{cpu::kernels::VecOps, CpuStorage, Layout, Module, Result, Shape, Tensor, D};
 use rayon::prelude::*;
+pub(super) mod attention;
+pub(super) mod bias_relu;
 
 fn slice<'a>(storage: &'a CpuStorage, layout: &Layout) -> Result<&'a [f32]> {
     let CpuStorage::F32(values) = storage else {

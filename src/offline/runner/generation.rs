@@ -58,19 +58,18 @@ impl Runner {
             let scores = self.model.decode(&input, &encoder, past)?;
             past += input.len();
             let blocked = repeated_trigram_tokens(&output);
-            let next = super::selection::select_logits_mapped(
+            let next = crate::offline::selection::select_logits(
                 &scores,
                 self.tokenizer.vocab.len(),
                 self.config.eos_token_id,
                 &blocked,
-                self.model.head_ids(),
             )?;
             if next == self.config.eos_token_id {
                 let decoded = self.tokenizer.decode(&output)?;
                 if decoded.is_empty() && text.chars().any(char::is_alphabetic) {
                     bail!("모델이 빈 번역을 생성했습니다");
                 }
-                return Ok(decoded);
+                return Ok(crate::translation::prose::finish(text, &decoded));
             }
             output.push(next);
             input.clear();

@@ -1,4 +1,4 @@
-//! Greedy decoding over borrowed CPU logits. No full-vocabulary copy is needed.
+//! Shared greedy decoding over borrowed CPU logits; no full-vocabulary copy.
 use anyhow::{Context, Result};
 use candle_core::{CpuStorage, Storage, Tensor};
 use std::collections::HashSet;
@@ -58,64 +58,9 @@ fn select_scalar(scores: &[f32], vocab: usize, eos: u32, blocked: &HashSet<u32>)
     best.map(|(id, _)| id)
 }
 
-pub(super) fn select_logits_mapped(
-    scores: &Tensor,
-    vocab: usize,
-    eos: u32,
-    blocked: &HashSet<u32>,
-    ids: Option<&[u32]>,
-) -> Result<u32> {
-    let Some(ids) = ids else {
-        return select_logits(scores, vocab, eos, blocked);
-    };
-    anyhow::ensure!(
-        scores.rank() == 1 && scores.elem_count() == ids.len(),
-        "어휘 점수와 ID 매핑 길이가 다릅니다"
-    );
-    let (storage, layout) = scores.storage_and_layout();
-    let Storage::Cpu(CpuStorage::F32(values)) = &*storage else {
-        anyhow::bail!("출력 점수는 CPU F32여야 합니다");
-    };
-    let (start, end) = layout
-        .contiguous_offsets()
-        .context("출력 점수가 연속 메모리가 아닙니다")?;
-    let mut best: Option<(u32, f32)> = None;
-    for (&id, &score) in ids.iter().zip(&values[start..end]) {
-        if id as usize >= vocab || (id < 4 && id != eos) || !score.is_finite() {
-            continue;
-        }
-        if best.is_none_or(|(old_id, old_score)| {
-            score.total_cmp(&old_score).is_gt()
-                || (score.total_cmp(&old_score).is_eq() && id < old_id)
-        }) && !blocked.contains(&id)
-        {
-            best = Some((id, score));
-        }
-    }
-    best.map(|(id, _)| id)
-        .context("모델이 유효한 출력 토큰을 생성하지 못했습니다")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn mapped_scores_keep_original_id_ties_specials_and_repetition_bans() {
-        let scores = Tensor::new(&[1.0f32, 1.0, 1.0, 100.0], &candle_core::Device::Cpu).unwrap();
-        let ids = [9, 4, 2, 0];
-        assert_eq!(
-            select_logits_mapped(&scores, 20, 2, &HashSet::new(), Some(&ids)).unwrap(),
-            2
-        );
-        assert_eq!(
-            select_logits_mapped(&scores, 20, 2, &[2].into(), Some(&ids)).unwrap(),
-            4
-        );
-        assert_eq!(
-            select_logits_mapped(&scores, 20, 2, &[2, 4].into(), Some(&ids)).unwrap(),
-            9
-        );
-    }
     fn reference(scores: &[f32], vocab: usize, eos: u32, blocked: &HashSet<u32>) -> Option<u32> {
         scores
             .iter()

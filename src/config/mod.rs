@@ -27,7 +27,6 @@ pub struct Config {
     pub learning_path: Option<String>,
     pub learning_enabled: bool,
     pub parallel_mode: String,
-    pub fast_vocabulary: bool,
     pub ca_bundle: Option<String>,
     pub user_agent: String,
     pub max_title_length: usize,
@@ -54,7 +53,6 @@ impl Default for Config {
             learning_path: None,
             learning_enabled: true,
             parallel_mode: "auto".into(),
-            fast_vocabulary: false,
             ca_bundle: None,
             user_agent: "SyousetuTranslateRust/0.3 (personal web novel reader)".into(),
             max_title_length: 25,
@@ -138,7 +136,10 @@ impl Config {
                 "include_comment" => cfg.include_comment = boolean()?,
                 "save_without_file_chooser" => cfg.save_without_file_chooser = boolean()?,
                 "learning_enabled" => cfg.learning_enabled = boolean()?,
-                "fast_vocabulary" => cfg.fast_vocabulary = boolean()?,
+                // Read old profiles without restoring the retired approximate mode.
+                "fast_vocabulary" => {
+                    boolean()?;
+                }
                 "model_dir" => cfg.model_dir = (!value.is_empty()).then_some(value),
                 "download_dir" => cfg.download_dir = (!value.is_empty()).then_some(value),
                 "learning_path" => cfg.learning_path = (!value.is_empty()).then_some(value),
@@ -201,7 +202,7 @@ impl Config {
         } else {
             self.max_cpu_core_count as usize
         };
-        maximum.clamp(1, 64)
+        maximum.clamp(1, 256)
     }
 
     /// Persist all settings using the Java client's UTF-8 Properties format.
@@ -252,7 +253,6 @@ impl Config {
                 self.learning_path.clone().unwrap_or_default(),
             ),
             ("learning_enabled", self.learning_enabled.to_string()),
-            ("fast_vocabulary", self.fast_vocabulary.to_string()),
             ("parallel_mode", self.parallel_mode.clone()),
             ("ca_bundle", self.ca_bundle.clone().unwrap_or_default()),
             (

@@ -50,7 +50,9 @@ pub fn write_episode(
     write!(output, "\n\n{title}\n\n")?;
     output.flush()?;
     session.translate_lines_into(&episode.lines, &mut |index, translation| {
-        if config.print_japanese {
+        // A paragraph break has no second-language content. Emit it once,
+        // while keeping both source and translation for nonblank rows.
+        if config.print_japanese && !episode.lines[index].trim().is_empty() {
             writeln!(output, "{}", episode.lines[index])?;
         }
         writeln!(output, "{translation}")?;
@@ -134,5 +136,19 @@ mod tests {
             lines: vec!["一".into(), "二".into()],
         };
         assert!(format_episode(&mut session, &episode, 1, 1, &Config::default()).is_err());
+    }
+    #[test]
+    fn bilingual_paragraph_break_is_written_once_without_merging_dialogue() {
+        let mut session = Session::direct(Box::new(crate::translation::engine::Passthrough));
+        let episode = Episode {
+            title: "章".into(),
+            lines: vec!["「一」".into(), "".into(), "「二」".into()],
+        };
+        let config = Config {
+            print_japanese: true,
+            ..Config::default()
+        };
+        let output = format_episode(&mut session, &episode, 1, 1, &config).unwrap();
+        assert!(output.ends_with("「一」\n「一」\n\n「二」\n「二」\n"));
     }
 }

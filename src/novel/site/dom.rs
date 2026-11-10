@@ -2,6 +2,7 @@ use anyhow::Result;
 use ego_tree::NodeRef;
 use scraper::{ElementRef, Html, Node};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
+mod body;
 thread_local! {
     static SELECTORS: RefCell<HashMap<String,Rc<scraper::Selector>>> = RefCell::default();
 }
@@ -72,21 +73,5 @@ pub(super) fn first_element<'a>(document: &'a Html, selectors: &[&str]) -> Optio
     })
 }
 pub(super) fn element_lines(element: ElementRef<'_>, include_furigana: bool) -> Vec<String> {
-    let mut text = String::new();
-    extract_text(*element, &mut text, include_furigana);
-    let lines: Vec<String> = text
-        .replace("\r\n", "\n")
-        .split('\n')
-        .map(str::trim_end)
-        .map(str::to_string)
-        .collect();
-    let start = lines
-        .iter()
-        .position(|line| !line.trim().is_empty())
-        .unwrap_or(lines.len());
-    let end = lines
-        .iter()
-        .rposition(|line| !line.trim().is_empty())
-        .map_or(start, |last| last + 1);
-    lines[start..end].to_vec()
+    body::lines(element, include_furigana)
 }

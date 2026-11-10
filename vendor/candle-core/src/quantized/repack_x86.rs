@@ -7,6 +7,10 @@
 use super::k_quants::{BlockQ4K, BlockQ6K, BlockQ8K, BlockQ8_0, QK8_0, QK_K};
 use super::{GgmlType, QuantizedType};
 use half::f16;
+#[cfg(target_arch = "x86_64")]
+mod dual_q8;
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod top1;
 
 pub(crate) const TILE_N: usize = 16;
 
@@ -327,6 +331,7 @@ mod kernels {
         m0: usize,
         dst: *mut f32,
         n: usize,
+        column: usize,
     ) {
         let mut acc = [_mm512_setzero_ps(); MT];
         for b in 0..kb {
@@ -366,7 +371,7 @@ mod kernels {
             }
         }
         for r in 0..MT {
-            _mm512_storeu_ps(dst.add((m0 + r) * n + nt * TILE_N), acc[r]);
+            _mm512_storeu_ps(dst.add((m0 + r) * n + column), acc[r]);
         }
     }
 }
@@ -391,14 +396,14 @@ unsafe fn matmul_unit_512(
     use core::arch::x86_64::*;
     if let PackedX86::Q8_0(tiles) = packed {
         match mt {
-            1 => kernels::q8_0_unit::<1>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            2 => kernels::q8_0_unit::<2>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            3 => kernels::q8_0_unit::<3>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            4 => kernels::q8_0_unit::<4>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            5 => kernels::q8_0_unit::<5>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            6 => kernels::q8_0_unit::<6>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            7 => kernels::q8_0_unit::<7>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
-            8 => kernels::q8_0_unit::<8>(tiles, lhs_q, kb, nt, m0, dst_ptr, n),
+            1 => kernels::q8_0_unit::<1>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            2 => kernels::q8_0_unit::<2>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            3 => kernels::q8_0_unit::<3>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            4 => kernels::q8_0_unit::<4>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            5 => kernels::q8_0_unit::<5>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            6 => kernels::q8_0_unit::<6>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            7 => kernels::q8_0_unit::<7>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
+            8 => kernels::q8_0_unit::<8>(tiles, lhs_q, kb, nt, m0, dst_ptr, n, nt * TILE_N),
             _ => unreachable!("Q8 row tile exceeds MAX_MT"),
         }
         return;
@@ -505,23 +510,32 @@ pub(crate) fn matmul_tiles(
         let lv = level().expect("select() gated");
         let kb = k / QK_K;
         let n_tiles = n / TILE_N;
-        let mt_step = if matches!(packed, PackedX86::Q8_0(_)) && n >= 16_384 {
+        let dual = lv == X86Level::Avx512Vnni && matches!(packed, PackedX86::Q8_0(_)) && m > 1;
+        let nt_step = if dual { 2 } else { 1 };
+        let mt_step = if !dual && matches!(packed, PackedX86::Q8_0(_)) && n >= 16_384 {
             kernels::MAX_MT
         } else {
             4
         };
         let dst_ptr = dst.as_mut_ptr() as usize;
-        let total_units = n_tiles * m.div_ceil(mt_step);
+        let total_units = n_tiles.div_ceil(nt_step) * m.div_ceil(mt_step);
         let m_units = m.div_ceil(mt_step);
         super::utils::execute_matmul_tiles(total_units, (m, k, n), |range| {
             let dst_ptr = dst_ptr as *mut f32;
             for unit in range {
-                let nt = unit / m_units;
+                let nt = unit / m_units * nt_step;
                 let m0 = (unit % m_units) * mt_step;
                 let mt = (m - m0).min(mt_step);
                 unsafe {
                     if lv == X86Level::Avx512Vnni {
-                        matmul_unit_512(packed, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                        if dual && nt + 1 < n_tiles {
+                            let PackedX86::Q8_0(tiles) = packed else {
+                                unreachable!()
+                            };
+                            dual_q8::compute(tiles, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                        } else {
+                            matmul_unit_512(packed, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                        }
                     } else {
                         matmul_unit_256(
                             packed,
@@ -986,6 +1000,7 @@ pub(crate) fn level() -> Option<X86Level> {
             && !force_vnni
             && is_x86_feature_detected!("avx512f")
             && is_x86_feature_detected!("avx512vnni")
+            && is_x86_feature_detected!("avx512bw")
         {
             return Some(X86Level::Avx512Vnni);
         }

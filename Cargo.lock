@@ -3657,6 +3657,7 @@ dependencies = [
  "encoding_rs",
  "fancy-regex",
  "fs2",
+ "gemm",
  "libloading",
  "miniz_oxide 0.9.1",
  "rayon",

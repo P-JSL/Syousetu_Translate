@@ -3,6 +3,7 @@
 mod bootstrap;
 mod core_dictionary;
 pub mod import;
+mod speech;
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,8 @@ pub struct Memory {
     defaults_applied: bool,
     #[serde(default, skip_serializing_if = "is_zero")]
     dictionary_revision: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    speech_revision: u32,
     pub sentences: BTreeMap<String, String>,
     pub terms: Vec<Term>,
 }
@@ -38,6 +41,7 @@ impl Default for Memory {
             version: 1,
             defaults_applied: false,
             dictionary_revision: 0,
+            speech_revision: 0,
             sentences: BTreeMap::new(),
             terms: Vec::new(),
         }
@@ -105,6 +109,34 @@ impl Memory {
     }
     pub fn lookup(&self, source: &str) -> Option<&str> {
         self.sentences.get(source.trim()).map(String::as_str)
+    }
+    /// Exact user edits win. A complete quoted utterance can reuse an approved
+    /// inner correction without losing its frame; punctuation width is an alias.
+    pub fn resolve(&self, source: &str) -> Option<std::borrow::Cow<'_, str>> {
+        use std::borrow::Cow;
+        if let Some(text) = self.lookup(source) {
+            return Some(Cow::Borrowed(text));
+        }
+        if self.sentences.is_empty() {
+            return None;
+        }
+        let utterance = crate::translation::prose::Utterance::parse(source);
+        let canonical = utterance.inner.replace('!', "！").replace('?', "？");
+        let corrected = self
+            .lookup(utterance.inner)
+            .or_else(|| self.lookup(&canonical))
+            .or_else(|| {
+                (!utterance
+                    .inner
+                    .ends_with(['。', '！', '？', '!', '?', '.', '…']))
+                .then(|| self.lookup(&format!("{}。", utterance.inner)))
+                .flatten()
+            })?;
+        if utterance.quotes.is_some() {
+            Some(Cow::Owned(utterance.frame(corrected)))
+        } else {
+            Some(Cow::Borrowed(corrected))
+        }
     }
     /// Only terms present in the Japanese source qualify. Replacements run in
     /// one pass, preventing one correction from being fed into another rule.

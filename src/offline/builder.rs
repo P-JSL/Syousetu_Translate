@@ -1,5 +1,5 @@
 //! Construction policy: required model location, typed CPU budget and defaults.
-use super::{OfflineTranslator, ParallelPolicy, VocabularyPolicy};
+use super::{OfflineTranslator, ParallelPolicy};
 use crate::learning::Memory;
 use anyhow::Result;
 use std::{
@@ -23,7 +23,6 @@ pub struct TranslatorBuilder {
     budget: CpuBudget,
     policy: ParallelPolicy,
     workers: usize,
-    vocabulary_policy: VocabularyPolicy,
 }
 impl TranslatorBuilder {
     pub(super) fn new(root: &Path) -> Self {
@@ -37,7 +36,6 @@ impl TranslatorBuilder {
             ),
             policy: ParallelPolicy::Auto,
             workers: 32,
-            vocabulary_policy: VocabularyPolicy::Full,
         }
     }
     pub fn memory(mut self, memory: Memory) -> Self {
@@ -53,11 +51,7 @@ impl TranslatorBuilder {
         self
     }
     pub fn workers(mut self, workers: usize) -> Self {
-        self.workers = workers.clamp(1, 64);
-        self
-    }
-    pub fn vocabulary_policy(mut self, policy: VocabularyPolicy) -> Self {
-        self.vocabulary_policy = policy;
+        self.workers = workers.clamp(1, 256);
         self
     }
     pub fn build(self) -> Result<OfflineTranslator> {
@@ -65,13 +59,6 @@ impl TranslatorBuilder {
             Some(memory) => memory,
             None => Memory::bundled()?,
         };
-        OfflineTranslator::load(
-            &self.root,
-            memory,
-            self.budget,
-            self.policy,
-            self.workers,
-            self.vocabulary_policy,
-        )
+        OfflineTranslator::load(&self.root, memory, self.budget, self.policy, self.workers)
     }
 }

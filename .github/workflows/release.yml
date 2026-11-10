@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       kind:
-        description: Portable application, prepared model, or Windows offline validation
+        description: Application package with Windows validation, or explicit model maintenance
         type: choice
         options: [web, model, model-smoke, portable-smoke]
         default: web
@@ -33,6 +33,8 @@ jobs:
   stage:
     if: inputs.kind == 'web' || !inputs.kind
     runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.verify.outputs.source_sha }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -49,6 +51,7 @@ jobs:
           workspaces: tools/release_package
           shared-key: portable-packager-linux
           cache-on-failure: true
+          cache-directories: build/model-cache
       - name: Validate tag, successful CI, draft and artifact source (Rust)
         id: verify
         run: cargo run --locked --release --manifest-path tools/release_package/Cargo.toml -- stage-web "$RELEASE_TAG" "$CI_RUN_ID"
@@ -129,7 +132,8 @@ jobs:
         run: ./release-audit.exe portable web-client fresh-model portable-work
 
   portable-smoke:
-    if: inputs.kind == 'portable-smoke'
+    needs: stage
+    if: ${{ always() && ((inputs.kind == 'web' && needs.stage.result == 'success') || inputs.kind == 'portable-smoke') }}
     runs-on: windows-latest
     permissions:
       actions: read
@@ -141,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.stage.outputs.source_sha || inputs.tag }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -163,7 +167,7 @@ jobs:
         with:
           name: SyousetuTranslate-Portable-${{ inputs.tag }}
           path: staged-release
-          run-id: ${{ inputs.package_run_id }}
+          run-id: ${{ inputs.kind == 'web' && github.run_id || inputs.package_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify and unpack the exact portable release (Rust, archive dependencies only)
         run: |

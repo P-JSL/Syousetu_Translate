@@ -77,7 +77,6 @@ impl OfflineTranslator {
         progress: impl Fn(usize, usize) + Sync,
         emit: &mut dyn FnMut(usize, &str) -> Result<()>,
     ) -> Result<()> {
-        self.prepare_vocabulary(lines)?;
         let parallel = self.select_parallel(lines)?;
         progress(0, lines.len());
         if !parallel {
@@ -93,7 +92,7 @@ impl OfflineTranslator {
         let batch = super::batch::Batch::new(lines, |source| {
             self.runners[0]
                 .correction(source)
-                .map(str::to_owned)
+                .map(std::borrow::Cow::into_owned)
                 .or_else(|| {
                     if !japanese(source) {
                         Some(source.to_owned())

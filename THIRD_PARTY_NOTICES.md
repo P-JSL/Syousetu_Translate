@@ -23,7 +23,8 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   quantization. Local patches in `vendor/candle-core/PATCHES.md` make unused
   adapters optional, schedule batched CPU work on a bounded pool, specialize Q8
   register blocks, and vectorize activation quantization while preserving its
-  scalar rounding/scales. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
+  scalar rounding/scales. Two-tile Q8 and exact full-vocabulary tile reduction
+  additionally preserve per-output group/FMA order. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
   preserving the original reduction order; the full Candle NN crate is not a
   production dependency. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
   SentencePiece normalization/BPE processing. Python and PyTorch are used only
@@ -40,3 +41,8 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
 The Apache-2.0 license is included in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 Other Rust dependencies and their licenses are recorded in Cargo.lock and their
 respective crates. This project itself remains MIT licensed.
+
+The new 112-entry speech snapshot and source-qualified prose rules are
+project-authored. Research citations and implementation decisions, including
+which algorithms were not ported, are in `docs/inference-research-2026-11.md`.
+No extra model, learned drafter or third-party training dataset is bundled.
