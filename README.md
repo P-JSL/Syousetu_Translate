@@ -1,308 +1,103 @@
-# Syousetu Translate — Rust migration
+# Syousetu Translate
 
-**v0.3.4: Japanese contractions and dialogue handling, exact full-vocabulary CPU optimizations, live TXT output and compressed Japanese–Korean corrections. Windows x64 portable release; Linux x64 source builds.**
+**일본어 웹소설을 한국어로 번역하는 Rust 기반 데스크톱 프로그램입니다.**
 
-This repository contains a Rust implementation of web-novel parsing, dictionary protection, text translation flow and native Windows DLL compatibility. It was based on the source-visible Java code included in `ezTrans XP.zip` (39 .java files) and `translator7.zip` (45 .java files).
+웹소설 URL을 입력해 목차를 확인하고, 원하는 회차를 번역하여 TXT 파일로 저장할 수 있습니다. 기본 번역 엔진은 CPU에서 동작하는 **SMaLL-100 INT8 오프라인 모델**입니다. 번역에 Java, Python, GPU, ezTrans XP 또는 외부 번역 API가 필요하지 않습니다.
 
-The default `internal` engine runs the public **SMaLL-100 INT8** model directly from
-Japanese to Korean in Rust/Candle. No English pivot, proprietary DLL, Python,
-GPU, or translation API is required. The portable Windows release includes the
-ready-to-run **354MB Q8_0 GGUF** plus tokenizer/configuration. Unzip the entire
-package and launch the BAT: the adjacent `models` folder is selected automatically,
-without initial model preparation or downloading. The model payload is
-**360,332,983 bytes**, about 73% less than the former FP32 source download.
-Optional repairs fetch only these prepared INT8 assets with pinned SHA-256 and
-resumable downloads. Inference shares weights and runs offline. A live novel URL
-still requires website access; use a 64-bit system.
+## 다운로드 및 실행
 
-User-approved sentence corrections and source-qualified terminology edits are
-saved in a small local translation memory. This is lightweight adaptation,
-not model-weight fine-tuning. Generated translations are never automatically
-accepted as training data. See [offline engine and validation](docs/offline-engine.md)
-and [third-party notices](THIRD_PARTY_NOTICES.md). This small public model can
-mistranslate fiction, names and slang; it does not reproduce ezTrans output.
+- **[최신 Windows x64 릴리스 다운로드](https://github.com/P-JSL/Syousetu_Translate/releases/latest)**
+- 지원 환경: **Windows 10/11, 64비트**
+- Windows 배포 ZIP에는 번역 모델과 실행 파일이 포함되어 있습니다.
 
-The current source separates CLI, desktop views, parsing, inference, model
-lifecycle, correction storage and optional compatibility code into domain folders.
-It embeds 1,058 authored Japanese–Korean headword glosses in 9,144 compressed
-bytes, plus 68 sentence/name corrections and six source-qualified spelling rules
-in 2,424 compressed bytes. Exact headwords keep their representative dictionary
-meanings; full sentences retain neural context. A further 112 reviewed spoken
-utterances occupy 1,425 compressed bytes. Source-qualified contractions,
-obligations, requests and Korean speech endings are described in
-[dialogue handling](docs/dialogue-and-contractions.md). New personal profiles use `corrections.json.zlib`;
-existing JSON profiles remain supported. Windows defaults to
-`C:\Users\rabbit\OneDrive\문서` for automatic output and save dialogs.
-See [architecture and invariants](docs/architecture.md) and the
-[supplied dictionary audit/import guide](docs/resource-audit.md).
+1. 최신 릴리스에서 `SyousetuTranslate-Web-*-Windows-x64.zip` 파일을 다운로드합니다.
+2. ZIP **전체를 같은 폴더에 압축 해제**합니다. `models` 폴더를 따로 이동하거나 삭제하지 마세요.
+3. **`웹소설 번역기.bat`**을 실행합니다.
+4. **웹소설** 탭에서 작품 URL을 입력하고 **목차 확인**을 선택합니다.
+5. 번역할 시작·마지막 회차와 출력 파일을 지정한 다음 **번역 실행**을 누릅니다.
+6. 작업 큐에서 진행률을 확인하고, 완료된 TXT 파일을 열어봅니다.
 
-The internal engine defaults to 32 logical translation contexts; `--jobs 16`,
-`--jobs 32` and `--jobs 64` select the batch capacity (up to 256 is supported;
-larger batches use more memory and need not be faster). A shared Rayon pool caps
-actual compute threads at the available CPU budget. Attention/KV state stays
-private while encoder/decoder linear operations run in shared batches. Output
-appears directly at its `.txt` path and is flushed as ordered translations arrive.
-Interrupted jobs retain their translated prefix and any original-file backup.
-See [CPU batching, research and validation](docs/cpu-batching.md).
+배포 ZIP에는 모델이 들어 있으므로 정상적인 압축 해제 후에는 별도 모델 다운로드가 필요하지 않습니다. **모델 준비 / 복구**는 모델이 누락되거나 손상된 경우에 사용합니다.
 
-For the earlier v0.3.3 release, on the recorded four-CPU benchmark, full vocabulary with
-`--parallel-mode parallel --jobs 64` reduced complete 35/24-chapter runs by
-**51.5% / 59.4%** versus v0.3.2, with byte-identical bilingual TXT. Default
-capacity remains 32; select 64 for the measured profile. Hardware/input affect
-speed and memory use. Both complete outputs passed source-pair verification.
+> 번역 연산 자체는 오프라인으로 실행됩니다. 웹소설의 목차·본문을 사이트에서 가져오려면 인터넷 연결이 필요합니다. 모델은 CPU와 메모리를 사용하므로 여유 RAM **2GB 이상**을 권장합니다.
 
-v0.3.4 keeps the full vocabulary and removes the earlier
-experimental shortlist after semantic regressions were found. Existing
-`--full-vocabulary` scripts remain supported. CPU attention, bias/ReLU and
-output selection reduce intermediate traffic with reference-output checks;
-projection paths are measured on the actual CPU. A source-matched development
-measurement took **67.02s / 86.23s** for 35/24 chapters (58.9% / 67.3% shorter
-than the recorded v0.3.2 references). This release includes the current verified
-improvements; **70% and 90% remain subsequent targets**. See the
-[benchmark record](docs/phase2-benchmark.json) and
-[recent research and mathematical review](docs/inference-research-2026-11.md).
+## 주요 기능
 
-Both user-provided ZIPs were downloaded and checked against their SHA-256
-records on 2026-11-03. Their client differences, Rust module mapping, and
-remaining compatibility limits are recorded in [docs/porting-status.md](docs/porting-status.md).
+- **지원 사이트:** Kakuyomu, Alphapolis, 소설가가 되자(Syosetu), Syosetu18, Hameln, Novelup
+- **회차 선택:** 목차 조회, 시작·마지막 화 지정, 다중 작업 큐와 작업 순서 변경
+- **TXT 저장:** 회차 순서를 유지하며 번역 결과를 파일에 순차 기록, 중단 시 완료된 내용 보존
+- **교정 기억:** 직접 수정한 문장·용어를 로컬에 저장하고 이후 번역에 반영
+- **번역 설정:** 원문 병기, 후리가나·댓글 포함, 출력 위치 및 파일명 설정
+- **CPU 병렬 처리:** 기본 논리 작업자 32개, 작업 환경에 맞춰 조정 가능
+- **로컬 모델:** 일본어에서 한국어로 직접 번역하며, 번역 문장을 외부 번역 API로 전송하지 않음
 
-## Build and test
+기존 출력 파일을 덮어쓰는 작업에서는 오류·중단에 대비해 `.backup` 파일을 사용합니다. 작업 실패 후 남은 백업은 확인한 다음 동일한 출력 경로를 다시 사용하세요.
 
-```shell
-cargo test --all-targets
-cargo clippy --all-targets
-cargo build --release
-```
+### 교정 기억
 
-Production features exclude the tokenizer/archive adapters, Candle NN,
-model-export tools and legacy backends. A std-only Rust dependency/package
-audit prevents them entering the shipping build. See
-[direct INT8 download and release scope](docs/direct-int8-download.md).
+GUI의 **교정 기억**에서 일본어 원문과 수정한 한국어 문장 또는 용어를 등록·수정·삭제할 수 있습니다. 교정 데이터는 로컬에 보관되며 **모델 가중치의 재학습을 의미하지 않습니다.** 자동 생성된 번역 결과를 승인 없이 학습 데이터로 저장하지 않습니다.
 
-The optional Rust desktop client ports the `translator7.zip` web launcher:
-**BAT → GUI → URL → Run → translation and save**, together with its settings
-dialog and ordered task queue. Build both executables together, then start it:
+## 소스 코드 빌드
+
+개발 환경에는 **Rust 및 Cargo**가 필요합니다.
 
 ```sh
-cargo build --locked --features gui --bins
-./target/debug/syousetu-gui
+# CLI 빌드
+cargo build --locked --release
+
+# GUI + CLI 빌드
+cargo build --locked --release --features gui --bins
+
+# 테스트 및 정적 검사
+cargo test --locked --all-targets
+cargo clippy --locked --all-targets
 ```
 
-Keep `syousetu-gui` and `syousetu-translate` in the same directory (on Windows,
-both use `.exe`). On Windows, launch **`웹소설 번역기.bat`**. The GUI defaults
-to `internal`. Old GUI `native`/`eztrans` settings switch to the internal engine
-in memory; existing settings files change only when saved. Output selection,
-chapter ranges, settings save/load,
-queue reordering, per-task settings snapshots, errors and progress are supported.
-Linux needs a graphical desktop with X11/OpenGL runtime libraries. A Korean system font is loaded automatically; `SYOUSETU_FONT`
-can select a local font. The CLI does not require the `gui` feature or a display.
+GUI는 `target/release/syousetu-gui`에서 실행합니다(Windows는 `.exe`). 두 실행 파일은 같은 폴더에 있어야 합니다. Windows에서는 저장소의 `웹소설 번역기.bat`도 사용할 수 있습니다. Linux GUI는 X11/OpenGL 실행 환경이 필요합니다.
 
-Java/JRE/JavaFX and ezTrans XP are not needed for the default internal engine.
-The portable GUI is ready after extraction; enter a work URL and run translation.
-For a source/nonbundled build, **모델 준비 / 복구** downloads only prepared INT8.
-Use **교정 기억** to save, edit or delete corrections.
-
-The `SyousetuTranslate-Web-Windows-x64` CI artifact contains both executables,
-the BAT launcher, notices and a [Windows usage guide](docs/windows-web-client.md).
-
-GitHub Actions checks Linux x64 and Windows x64. The old CLI-only DLL adapter
-requires a separate i686 build with `--no-default-features --features legacy`.
-Recovery inspection/glossary tools are also behind `legacy`; the production
-package contains no compatibility DLL or vendor/runtime/model bundles.
-[INT8, TLS, performance research and validation](docs/int8-performance.md) covers
-the current implementation. Sections below describe the optional legacy scope.
-
-## Verified legacy binary file readers (not a full engine)
-
-The Rust CLI can validate the on-disk layout of user-owned JisJK.Inf,
-RuleKJ.Dat, CRuleKJ.Dat, and YongUn.Dat without loading the commercial DLL:
+소스 빌드에는 배포 ZIP과 달리 모델이 포함되지 않을 수 있습니다. 이 경우 다음 명령으로 준비합니다.
 
 ```sh
-cargo run -- inspect-dat --dir "C:\path\to\ezTrans XP\Dat" --out inspection.json
+cargo run --locked --release -- models --prepare
+cargo run --locked --release -- models --verify
 ```
 
-The Rust library exposes lossless borrowed record readers for the aligned
-JisJK table (128-byte rows), RuleKJ (1024-byte pages), compact length-prefixed
-CRuleKJ, and YongUn signature/marker. This validates the **container format
-only**. The proprietary grammar bytecode, cross-file indices and dictionary
-codec are still unknown. The independent native translator does not use these
-binary models as grammar rules. Do not infer semantic equivalence or translation
-quality from successful inspection. See docs/legacy-binary-analysis.md.
-
-To run the tests on locally installed, personally authorized original files:
+## CLI 사용 예시
 
 ```sh
-SYOUSETU_LEGACY_DAT_DIR=/path/to/Dat cargo test --lib original_binary_assets_if_available
+# 목차 확인
+cargo run --locked --release -- inspect --url https://kakuyomu.jp/works/2912051603596422650
+
+# 1~2화 번역 후 TXT 저장
+cargo run --locked --release -- download --url https://kakuyomu.jp/works/2912051603596422650 --start 1 --end 2 --out novel.txt
+
+# 로컬 TXT 번역
+cargo run --locked --release -- file --input original.txt --out translated.txt
+
+# 짧은 문장 번역
+cargo run --locked --release -- translate --text "私は学生です。"
+
+# 직접 수정한 번역 저장
+cargo run --locked --release -- memory --learn --source "私は学生です。" --corrected "저는 학생입니다."
 ```
 
-CI uses synthetic fixtures and excludes proprietary assets from releases.
+자주 사용하는 옵션은 `--jobs 1..256`(기본 32), `--parallel-mode auto|serial|parallel`, `--japanese`(원문 병기), `--model-dir PATH`, `--memory-path PATH`입니다. 작업자를 늘려도 항상 더 빠르지는 않으며 메모리 사용량이 증가할 수 있습니다. 전체 옵션은 `cargo run -- --help`에서 확인할 수 있습니다.
 
-## Original DLL scope: ZIP-root EHND wrapper
+## 제한 사항
 
-The sole *original DLL reference target* for this migration is the
-364,032-byte **J2KEngine.dll at the root of ezTrans XP.zip**. The
-same-byte J2KEngineH.dll is accepted as an alias. This wrapper advertises
-the PE export name EHND.dll and 25 named exports. A separate
-J2KEngine.dlx dependency supplies the original proprietary engine;
-the 2,998,272-byte translator/J2KEngine.dll is identical to that
-dependency, not to the root wrapper. Do not confuse the two.
+- 자동 사이트 접근이 제한되거나 페이지 구조가 변경되면 목차·본문 다운로드에 실패할 수 있습니다. 로그인, CAPTCHA, 유료 콘텐츠 또는 연령 확인을 우회하지 않습니다.
+- 경량 번역 모델은 고유명사, 구어체, 문맥이 복잡한 문장에서 오역할 수 있습니다. 번역 결과는 검토가 필요합니다.
+- 기본 `internal` 엔진은 ezTrans XP와 동일한 번역 결과를 보장하지 않습니다. `passthrough`는 원문 보존을 위한 테스트 옵션이며 번역 기능이 아닙니다.
+- 기존 ezTrans DLL 및 실험적 호환 기능은 별도의 `legacy` 빌드 범위입니다. **상용 엔진 자체를 Rust로 완전히 재구현한 것은 아닙니다.**
+- 사이트별 전체 작품 다운로드와 모든 Windows 환경에서의 호환성이 완전히 검증된 것은 아닙니다.
 
-Inspect your licensed local copy, without executing it:
+## 자세한 문서
 
-```sh
-cargo run -- inspect-root-dll --dll "C:\ezTrans XP\J2KEngine.dll" --out root-wrapper.json
-```
+- [Windows GUI 사용 안내](docs/windows-web-client.md)
+- [오프라인 모델 및 교정 기억](docs/offline-engine.md)
+- [프로젝트 구조](docs/architecture.md)
+- [CPU 병렬 처리 및 성능 검증](docs/cpu-batching.md)
+- [기존 클라이언트 이식 범위와 한계](docs/porting-status.md)
+- [서드파티 라이선스·고지](THIRD_PARTY_NOTICES.md)
 
-Legacy --engine eztrans now checks that it is loading the **root
-EHND DLL** and that J2KEngine.dlx and Dat/ exist before initializing it.
-The independent Rust native translator does not need any of these files.
-An export-name-compatible Rust DLL is NOT equivalent to reproducing all
-the commercial engine's grammar and dictionary algorithms.
-
-Full PE evidence, export ordinals, and known ABI gaps:
-docs/root-dll-scope.md.
-
-## Experimental EHND regex and control-flow audit
-
-Original EHND filter files include 8,668 ordinary literal rules,
-8,597 ordinary regex rules, 3,173 conditional directives, and 7
-unclassified definitions. The structural parser recognizes the exact `_TGL`, `_SkipLayer`, and
-`_skip_sub` control keywords before numeric columns. Other patterns starting
-with an underscore remain ordinary rules.
-
-An explicitly enabled *experimental* Rust filter executor supports
-lookaround, backreferences, numeric capture replacements, and
-literal transformations in priority order. A per-pattern backtrack
-limit and input/output limits are enforced; regex failures return
-an error with the source file and line number. The original EHND
-conditional state machine is not implemented.
-
-Run against user-owned local files:
-
-```shell
-cargo run -- audit-ehnd-regex --dir ./engine/Ehnd --out audit.json
-cargo run -- audit-ehnd-control --dir ./engine/Ehnd --out controls.json
-cargo run -- file --input source.txt --out experimental.txt --engine native --ehnd-dir ./engine/Ehnd --ehnd-regex-experimental
-```
-
-The --ehnd-regex-strict switch explicitly rejects incomplete execution.
-Avoid this experimental filter mode for production content until results
-are compared with the licensed original executable. Ordinary native
-mode does not enable EHND filters. See docs/ehnd-parity-status.md.
-
-## Rust-native J2K replacement (experimental)
-
-The optional `legacy` feature preserves the old glossary and **four** C exports:
-J2K_InitializeEx, J2K_TranslateMMNTW, J2K_TranslateMMNT and J2K_FreeMem.
-These are excluded from the default CLI/GUI and release files. To explicitly
-build the compatibility DLL, use `cargo rustc --release --lib --no-default-features
---features legacy --crate-type cdylib` (and the appropriate i686 Windows target).
-The default engine is SMaLL-100 INT8, not this glossary.
-
-**Important limitation:** This is NOT the ezTrans language engine recreated
-bit-for-bit. It does not implement its proprietary parser, morphological
-dictionary, grammar model, full transfer rules, or exact Japanese/Korean output.
-It is a limited curated glossary and Korean particle postprocessor; unsupported
-Japanese stays untranslated unless strict mode is enabled. It can be improved
-with user-supplied translation dictionaries, but identical novel translations
-are not currently possible. The commercial binary/dictionary is not needed for
-the native mode and is not redistributed.
-
-```sh
-cargo run -- file --input original.txt --out translated.txt --engine native
-cargo run -- file --input original.txt --out translated.txt --engine native --native-strict
-cargo run -- file --input original.txt --out translated.txt --native-dictionary myterms.tsv
-cargo build --release --target i686-pc-windows-msvc
-```
-
-The optional UTF-8 or UTF-16-BOM glossary format is one Japanese/Korean pair
-per line, separated by TAB. Additional columns are ignored, so user-owned
-Ehnd UserDict-style text files may be used. Last matching dictionary entry
-overrides a built-in translation; longest Japanese match wins for overlapping
-terms. For the DLL interface, set SYOUSETU_NATIVE_DICTIONARY to an absolute
-glossary path **before the first DLL initialization**. The DLL does not read
-the legacy Dat/ binary dictionary, and its InitializeEx path/ID parameters are
-ignored. All calls are UTF-16, return a DLL-owned allocation, and require
-J2K_FreeMem for each returned pointer. The four client-used exports and limited
-lifecycle aliases do not reproduce all 25 original wrapper exports.
-
-CLI compatibility: --engine eztrans and --eztrans-dir PATH retain the old
-licensed ezTrans DLL adapter; --passthrough retains raw Japanese for parser
-testing. Explicit --eztrans-dir without --engine still selects the legacy
-adapter. Default native mode cannot be treated as a production-grade
-Japanese-to-Korean translator.
-
-## Commands
-
-```shell
-cargo run -- inspect --url https://kakuyomu.jp/works/2912051603596422650
-cargo run -- inspect --url https://www.alphapolis.co.jp/novel/767156331/284095783
-cargo run -- download --url https://kakuyomu.jp/works/2912051603596422650 --out novel.txt --start 1 --end 2 --eztrans-dir "C:\\ezTrans"
-cargo run -- file --input original.txt --out translated.txt --eztrans-dir "C:\\ezTrans"
-```
-
-When automated access is restricted, legally accessible pages saved by the user can be parsed offline with `inspect --url ... --html saved-work.html` or `download --html work.html --episode-html-dir folder` (chapter files `1.html`, `2.html`, etc.). No CAPTCHA, premium, age verification or sign-in bypass is implemented.
-
-Use `--passthrough` only for parser tests. It retains the Japanese source text and is **not** a translation engine.
-
-## Test targets
-
-- Kakuyomu: https://kakuyomu.jp/works/2912051603596422650
-- Alphapolis: https://www.alphapolis.co.jp/novel/767156331/284095783
-
-The original Alphapolis Java parser loses DOM markup by calling `Jsoup.parse(tbody.text())`. The Rust version extracts from the original DOM with alternative selectors and rejects missing article bodies. Live Alphapolis access was unavailable in the assistant environment. Real complete-work downloads and live site-specific tests remain unverified.
-
-## What is implemented
-
-- Six original website URL families (Kakuyomu, Alphapolis, Syosetu, Syosetu18, Hameln, Novelup)
-- HTML parsing and legacy Kakuyomu `__NEXT_DATA__` JSON fallback
-- DOM-based chapter extraction and ruby pronunciation handling
-- HTTP timeouts, bounded retries, clear restriction errors, basic request throttling
-- UTF-8 and UTF-16(BOM) file input, live ordered TXT output with original-file backup
-- Aho–Corasick dictionary replacement, hangul particle selection and bracket/emoji preservation
-- Dynamic loading of a user-provided Windows ezTrans DLL (original J2K ABI), in a 32-bit compatible process
-- CI unit tests and builds on Linux/Windows
-
-## Local ezTrans installation (Windows x86)
-
-If you own a usable ezTrans XP installation, you can create a private local
-engine bundle from its ZIP without manually selecting DLLs.
-
-```powershell
-py -3 scripts/install_local_engine.py --archive "C:\\Downloads\\ezTrans XP.zip"
-cargo build --release --target i686-pc-windows-msvc
-.\\target\\i686-pc-windows-msvc\\release\\syousetu-translate.exe file --input original.txt --out translated.txt --engine eztrans
-```
-
-The installer extracts `J2KEngine.dll` / `J2KEngineH.dll`, the required root
-`J2KEngine.dlx` dependency, relevant support DLLs, `Dat/`, and optional `Ehnd/`
-into the Git-ignored `engine/` folder. Archives missing the root dependency
-are rejected before extraction; `translator/J2KEngine.dll` is not substituted
-for it. It never overwrites an existing destination. For portable deployment,
-copy your own `engine/` beside the 32-bit executable. By default the program
-searches `engine/` beside the executable and in the current working directory.
-Use `--eztrans-dir PATH` or `SYOUSETU_EZTRANS_DIR` to override that location.
-
-The installer rejects ZIP path traversal and duplicate filenames, then
-verifies extracted byte counts. Synthetic fixture tests run with:
-
-```sh
-python -m unittest discover -s scripts -p 'test_*.py'
-```
-
-No vendor files are stored in Git. The supplied PE32 DLL exports the native
-`J2K_TranslateMMNTW` interface, but actual engine initialization/translation
-on Windows has not yet been smoke-tested.
-
-## Known gaps and constraints
-
-- **The proprietary J2K translation engine itself is NOT ported into native Rust.** The original source package contains DLLs and data, not the underlying translation-engine implementation. It needs a user-provided licensed Windows DLL and Dat files, and its ABI and translation fidelity must be validated on a real machine.
-- The `translator7` web GUI, settings editor, task queue and isolated DLL workers
-  have Rust counterparts. The file/directory GUI and the older client's ANSI API
-  are outside the selected web-workflow scope; existing CLI file commands remain.
-- Browser/Selenium fallback and driver patching are not implemented. Use ordinary
-  HTTP access or saved HTML; login, paid-content and CAPTCHA barriers are not bypassed.
-- All production-site HTML variants, full work completeness, and original-vs-Rust translations have not been exhaustively tested.
-- Aho–Corasick dictionary matching runs in approximately O(input length + matches) after preprocessing; network waits and native model translation are not guaranteed O(n).
-
-**Third-party binaries, DLLs, dictionaries, license files and Java runtimes are intentionally excluded. Do not redistribute them without permission.**
+프로젝트 자체의 라이선스는 `Cargo.toml`에 명시된 **MIT**입니다. 모델과 외부 구성요소에는 각각의 라이선스가 적용되며, 상용 DLL·사전 등 권한이 없는 파일은 배포에 포함하지 않습니다.
