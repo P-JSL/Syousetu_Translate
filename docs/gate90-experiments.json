@@ -1,0 +1,138 @@
+{
+  "reviewed_on": "2026-11-10",
+  "status": "90-percent-target-not-achieved",
+  "stable_release": "https://github.com/P-JSL/Syousetu_Translate/releases/tag/v0.3.5",
+  "stable_source": "b7403b773a3359dd14c9e666a08fb00b7a5fa3b5",
+  "baseline_reference_seconds": {
+    "chapters35": 163.110703742,
+    "chapters24": 263.901530639
+  },
+  "current_release_median_seconds": {
+    "chapters35": 48.543418098,
+    "chapters24": 70.689121024
+  },
+  "target90_seconds": {
+    "chapters35": 16.3110703742,
+    "chapters24": 26.3901530639
+  },
+  "required_further_speed_factor": {
+    "chapters35": 2.9761025477998944,
+    "chapters24": 2.6786173180896813
+  },
+  "platform": "AMD EPYC 9V45 Linux x86_64; CPU quota 4, logical contexts 128, no exposed GPU",
+  "common_conditions": "same pinned SMaLL-100 Q8_0; no learning; full vocabulary; cached complete HTML; process through final live TXT",
+  "interpretation": "Exploratory one-run full-work measurements, not replicated speed estimates. Microbenchmarks used actual pinned matrices and synthetic input; these are not novel translation times.",
+  "accepted_application_changes": [],
+  "removed_prototypes": true,
+  "experiments": [
+    {
+      "name": "AoSoA eight-row dense Q8",
+      "chapters": 35,
+      "seconds": 49.172670779,
+      "peak_rss_kib": 1210852,
+      "byte_identical_to_v034": true,
+      "numeric_tests": 3,
+      "binary_sha256": "b037a1452ee6e69a365d0b4514dcb9faf538c0bebf09216762bcbc6a25c89ebe",
+      "decision": "removed; no full-work improvement"
+    },
+    {
+      "name": "AoSoA eight-row streamed top-one",
+      "chapters": 35,
+      "seconds": 49.464250638,
+      "peak_rss_kib": 1177160,
+      "byte_identical_to_v034": true,
+      "numeric_tests": 3,
+      "binary_sha256": "1f28988e0f60e9317be1baf080dfcc386bd366fee1e1010d36d582462e0c756a",
+      "decision": "removed; no full-work improvement"
+    },
+    {
+      "name": "AoSoA twelve-row dense and streamed top-one",
+      "chapters": 35,
+      "seconds": 49.297401717,
+      "peak_rss_kib": 1200972,
+      "byte_identical_to_v034": true,
+      "numeric_tests": 3,
+      "binary_sha256": "3c91dfbdb51e5ad71c646a8cac1123925b49fdfca73f3d389323e02c5152eb21",
+      "decision": "removed; no full-work improvement"
+    },
+    {
+      "name": "AoSoA twelve-row explicit row expansion",
+      "chapters": 35,
+      "seconds": 49.473661986,
+      "peak_rss_kib": 1335780,
+      "byte_identical_to_v034": true,
+      "numeric_tests": 3,
+      "binary_sha256": "227dd18721a93d85420bbf1fccb4dfb361503434fa09a54dba856fc0fd170dea",
+      "decision": "removed; no full-work improvement"
+    },
+    {
+      "name": "Joint work-title/introduction preparation and reuse for automatic filename",
+      "chapters": 35,
+      "seconds": 48.586832968,
+      "peak_rss_kib": 1311076,
+      "byte_identical_to_v034": true,
+      "validation": "metadata unit test and GUI/CLI Clippy passed",
+      "binary_sha256": "19806decc0f91a66e314799a5b890ba1651e617643c899d0e516d49315fccc15",
+      "decision": "removed; observed difference too small to establish a speed gain"
+    }
+  ],
+  "experiments_chapters24": "Not repeated for rejected candidates: the complete 35-chapter run did not establish an improvement.",
+  "diagnostic_profile": {
+    "seconds": 53.700892115,
+    "byte_identical": true,
+    "nested_times_overlap": true,
+    "not_release_gate_timing": true,
+    "phases": [
+      {
+        "name": "encoder",
+        "calls": 94,
+        "seconds": 24.548651616
+      },
+      {
+        "name": "decoder",
+        "calls": 870,
+        "seconds": 27.973078341
+      },
+      {
+        "name": "batch_linear",
+        "calls": 12051,
+        "seconds": 11.961544634
+      },
+      {
+        "name": "batch_attention",
+        "calls": 5886,
+        "seconds": 5.61253534
+      },
+      {
+        "name": "batch_ffn_including_norm",
+        "calls": 3501,
+        "seconds": 18.127452713
+      },
+      {
+        "name": "projection_including_selection",
+        "calls": 870,
+        "seconds": 14.048546088
+      },
+      {
+        "name": "norm",
+        "calls": 11050,
+        "seconds": 1.443551373
+      },
+      {
+        "name": "embedding",
+        "calls": 964,
+        "seconds": 0.290289213
+      }
+    ]
+  },
+  "sources": {
+    "apa": "https://arxiv.org/abs/2610.13905",
+    "coefficient_optimization": "https://arxiv.org/abs/2609.26077",
+    "prefix_invariant_integer_kernels": "https://arxiv.org/abs/2609.39816",
+    "chainflow": "https://arxiv.org/abs/2611.08669",
+    "lookahead": "https://arxiv.org/abs/2402.02057"
+  },
+  "model_replacement": "Public direct JA-KO candidates were searched; no smaller replacement was validated for speed, meaning and dialogue quality. None was installed or bundled.",
+  "gpu_or_amx_gain_claimed": false,
+  "cross_hardware_mean": false
+}
