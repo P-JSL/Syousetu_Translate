@@ -10,11 +10,13 @@ blocks and scalar-compatible SIMD activation packing.
 | Folder | Responsibility |
 | --- | --- |
 | `src/cli/` | Typed command dispatch, validated arguments, backend construction and command orchestration |
+| `src/cli/commands/novel/` | Serial rate-limited source prefetch and bounded ready-only chapter windows |
 | `src/novel/site/` | URL validation, shared DOM extraction, site adapters, index completeness, chapter parsing |
 | `src/novel/network.rs` | Bounded website fetching with the shared TLS client |
 | `src/translation/` | Translator trait, backends, filtering, bounded file translation and output formatting |
 | `src/translation/filter/` | Literal dictionary parsing, character handling, protected replacements and Korean particle selection |
 | `src/translation/session/` | Private session state, subprocess ownership and bounded JSON protocol |
+| `src/translation/output/` | Cross-chapter inference batching and ordered live title/body output |
 | `src/offline/` | Builder, CPU budget, policy, shared bounded result cache and duplicate batch restoration |
 | `src/offline/runner/` | Sentence generation and repetition guard |
 | `src/offline/selection/` | Exact borrowed-logit selection and gated SIMD |
@@ -72,6 +74,12 @@ flowchart TD
   snapshots are shared immutably. Up to 256 logical contexts share a bounded Rayon
   compute pool. Result-cache mutation and source-order emission stay with the
   coordinator; progress remains monotonic.
+  A scoped source loader owns the network fetcher and feeds a bounded channel.
+  Ready chapters can share an inference batch only when the backend explicitly
+  declares that each row is independent. Legacy/stateful backends retain their
+  original chapter-by-chapter calls. Download errors are deferred until the
+  already available prefix is translated and flushed; dropping the receiver
+  releases a producer blocked on a full channel.
 
 The design follows the [Builder](https://rust-unofficial.github.io/patterns/patterns/creational/builder.html),
 [RAII guards](https://rust-unofficial.github.io/patterns/patterns/behavioural/RAII.html),

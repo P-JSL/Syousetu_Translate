@@ -15,6 +15,8 @@ static INVALID_FILENAME: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r#"[\\/:*?"<>|]|\[[^\]]*\]"#).expect("static filename rule")
 });
 pub use crate::storage::atomic_write;
+mod chapters;
+pub use chapters::write_episodes;
 
 pub fn format_episode(
     session: &mut Session,
@@ -36,17 +38,7 @@ pub fn write_episode(
     config: &Config,
 ) -> Result<()> {
     let ko_title = session.translate(&episode.title)?;
-    let current = format_number(number, &config.page_number_format)?;
-    let last = format_number(total, &config.page_number_format)?;
-    let title = TITLE_TOKENS.replace_all(&config.title_format, |caps: &regex::Captures<'_>| {
-        match &caps[0] {
-            "[currentPage]" => current.as_str(),
-            "[lastPage]" => last.as_str(),
-            "[koreanTitle]" => ko_title.as_str(),
-            _ => episode.title.as_str(),
-        }
-        .to_owned()
-    });
+    let title = chapter_title(&ko_title, &episode.title, number, total, config)?;
     write!(output, "\n\n{title}\n\n")?;
     output.flush()?;
     session.translate_lines_into(&episode.lines, &mut |index, translation| {
@@ -63,6 +55,27 @@ pub fn write_episode(
     })?;
     output.flush()?;
     Ok(())
+}
+fn chapter_title(
+    korean: &str,
+    japanese: &str,
+    number: usize,
+    total: usize,
+    config: &Config,
+) -> Result<String> {
+    let current = format_number(number, &config.page_number_format)?;
+    let last = format_number(total, &config.page_number_format)?;
+    Ok(TITLE_TOKENS
+        .replace_all(&config.title_format, |caps: &regex::Captures<'_>| {
+            match &caps[0] {
+                "[currentPage]" => current.as_str(),
+                "[lastPage]" => last.as_str(),
+                "[koreanTitle]" => korean,
+                _ => japanese,
+            }
+            .to_owned()
+        })
+        .into_owned())
 }
 pub fn format_header(session: &mut Session, work: &Work) -> Result<String> {
     let title = session.translate(&work.title)?;

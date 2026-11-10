@@ -6,6 +6,27 @@
 //! Pre-normalization, sinusoidal position offset, source language prefix and
 //! forced Korean decoder prefix differ from Marian. Weights are shared Q8_0
 //! tensors; each runner owns its attention caches.
+macro_rules! profile_scope {
+    ($phase:ident) => {
+        #[cfg(feature = "inference-profile")]
+        let _profile_scope =
+            crate::offline::profiling::Scope::start(crate::offline::profiling::Stage::$phase);
+    };
+}
+macro_rules! profile_op {
+    ($phase:ident, $operation:expr) => {{
+        #[cfg(feature = "inference-profile")]
+        {
+            crate::offline::profiling::measure(crate::offline::profiling::Stage::$phase, || {
+                $operation
+            })
+        }
+        #[cfg(not(feature = "inference-profile"))]
+        {
+            $operation
+        }
+    }};
+}
 mod config;
 mod layers;
 #[allow(unsafe_code)]
@@ -73,6 +94,7 @@ impl Model {
         })
     }
     fn embed(&self, ids: &[u32], past: usize) -> Result<Tensor> {
+        profile_scope!(Embedding);
         // Inputs have no padding; source and target language prefixes are real tokens.
         let x = self
             .shared
@@ -92,6 +114,7 @@ impl Model {
         )
     }
     fn embed_rows(&self, ids: &[u32], positions: &[u32]) -> Result<Tensor> {
+        profile_scope!(Embedding);
         let x = self
             .shared
             .embedding(&Tensor::new(ids, &Device::Cpu)?)?
@@ -110,6 +133,7 @@ impl Model {
         )
     }
     pub fn encode(&mut self, ids: &[u32]) -> Result<Tensor> {
+        profile_scope!(Encoder);
         let mut x = self.embed(ids, 0)?;
         for layer in &mut self.encoder {
             x = layer.forward(&x, None, None, false)?;
@@ -117,6 +141,7 @@ impl Model {
         x.apply(&self.encoder_norm)
     }
     pub fn decode(&mut self, ids: &[u32], encoder: &Tensor, past: usize) -> Result<Tensor> {
+        profile_scope!(Decoder);
         let mut x = self.embed(ids, past)?;
         let length = ids.len();
         let mask = if length > 1 {
@@ -146,7 +171,7 @@ impl Model {
             .apply(&self.decoder_norm)?
             .i((0, length - 1))?
             .unsqueeze(0)?;
-        self.shared.forward(&last)?.squeeze(0)
+        profile_op!(Projection, self.shared.forward(&last))?.squeeze(0)
     }
     pub fn reset(&mut self) {
         for layer in self.encoder.iter_mut().chain(self.decoder.iter_mut()) {
@@ -155,6 +180,7 @@ impl Model {
     }
 
     pub fn encode_many(&self, sources: &[Vec<u32>]) -> Result<Vec<Tensor>> {
+        profile_scope!(Encoder);
         let mut start = 0;
         let segments = sources
             .iter()
@@ -188,6 +214,7 @@ impl Model {
         vocab: usize,
         blocked: &[std::collections::HashSet<u32>],
     ) -> Result<Vec<u32>> {
+        profile_scope!(Decoder);
         let positions = past
             .iter()
             .map(|position| (position + 2) as u32)
@@ -201,12 +228,15 @@ impl Model {
             x = Layer::decode_rows(&mut layers, &x, encoders)?;
         }
         let last = x.apply(&models[0].decoder_norm)?.squeeze(0)?;
-        models[0].greedy.forward(
-            &models[0].shared,
-            &last,
-            vocab,
-            models[0].config.eos_token_id,
-            blocked,
+        profile_op!(
+            Projection,
+            models[0].greedy.forward(
+                &models[0].shared,
+                &last,
+                vocab,
+                models[0].config.eos_token_id,
+                blocked,
+            )
         )
     }
 }

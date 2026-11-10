@@ -3,6 +3,8 @@ mod builder;
 mod model;
 mod ordered;
 mod policy;
+#[cfg(feature = "inference-profile")]
+pub mod profiling;
 mod runner;
 mod runtime;
 mod scheduler;

@@ -57,6 +57,8 @@ unsafe fn tail(
         2 => kernels::q8_0_unit::<2>(tiles, lhs, kb, nt, m0, dst, 32, 0),
         3 => kernels::q8_0_unit::<3>(tiles, lhs, kb, nt, m0, dst, 32, 0),
         4 => kernels::q8_0_unit::<4>(tiles, lhs, kb, nt, m0, dst, 32, 0),
+        5 => kernels::q8_0_unit::<5>(tiles, lhs, kb, nt, m0, dst, 32, 0),
+        6 => kernels::q8_0_unit::<6>(tiles, lhs, kb, nt, m0, dst, 32, 0),
         _ => unreachable!("invalid tail rows"),
     }
 }
@@ -71,7 +73,8 @@ pub(crate) fn run(
     eos: u32,
     blocked: &[HashSet<u32>],
 ) -> crate::Result<Vec<u32>> {
-    let row_step = 4;
+    let corrections = dual_q8::corrections(lhs);
+    let row_step = 6;
     let row_units = m.div_ceil(row_step);
     let n_tiles = n / TILE_N;
     let items = n_tiles.div_ceil(2) * row_units;
@@ -81,7 +84,7 @@ pub(crate) fn run(
         .into_par_iter()
         .map(|chunk| {
             let mut winners = vec![None; m];
-            let mut values = [0f32; 4 * 32];
+            let mut values = [0f32; 6 * 32];
             for unit in chunk * width..items.min((chunk + 1) * width) {
                 let nt = unit / row_units * 2;
                 let m0 = unit % row_units * row_step;
@@ -93,8 +96,18 @@ pub(crate) fn run(
                     // Kernels index destination rows from m0. A local activation
                     // slice makes both source and destination start at zero.
                     let source = &lhs[m0 * (k / 256)..(m0 + rows) * (k / 256)];
+                    let sums = &corrections[m0 * (k / 256)..(m0 + rows) * (k / 256)];
                     if columns == 32 {
-                        dual_q8::local(tiles, source, k / 256, nt, 0, rows, values.as_mut_ptr());
+                        dual_q8::local(
+                            tiles,
+                            source,
+                            sums,
+                            k / 256,
+                            nt,
+                            0,
+                            rows,
+                            values.as_mut_ptr(),
+                        );
                     } else {
                         tail(tiles, source, k / 256, nt, 0, rows, values.as_mut_ptr());
                     }

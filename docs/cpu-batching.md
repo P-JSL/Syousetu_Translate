@@ -5,6 +5,8 @@ full-vocabulary decoder improves CPU execution and scheduling. The earlier
 Korean-focused shortlist has been removed from development source after meaning
 regressions were observed. Historical v0.3.3 measurements are retained below.
 Current work is described in [the November research review](inference-research-2026-11.md).
+Chapter-window ownership and profiling are described in
+[chapter batching](streaming-batches.md).
 All application, inference, glossary packing and new validation code is Rust.
 
 ## Applied research

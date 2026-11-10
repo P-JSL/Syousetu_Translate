@@ -9,10 +9,7 @@ use crate::{
     config::Config,
     novel::{
         network::Fetcher,
-        site::{
-            self, canonicalize, index_page_urls, parse_episode_with_comments, parse_work_pages,
-            Site, Work,
-        },
+        site::{self, canonicalize, index_page_urls, parse_work_pages, Site, Work},
     },
     translation::output,
 };
@@ -22,6 +19,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+mod source;
 fn fetcher_for(args: &[String], config: &Config) -> Result<Fetcher> {
     let (site, _) = canonicalize(&require(args, "--url")?)?;
     let delay = if site == Site::Hameln {
@@ -112,7 +110,22 @@ pub(crate) fn download(args: &[String]) -> Result<()> {
     if first > end {
         bail!("--end가 --start보다 작습니다");
     }
-    let mut session = translation_session(args, &config)?;
+    let output = std::thread::scope(|scope| {
+        let receive = source::prefetch(scope, args, &config, fetcher, &work, first..=end);
+        translate_work(args, &config, &work, first, end, receive)
+    })?;
+    println!("Saved {} episodes to {}", end - first + 1, output.display());
+    Ok(())
+}
+fn translate_work(
+    args: &[String],
+    config: &Config,
+    work: &Work,
+    first: usize,
+    end: usize,
+    receive: source::Source,
+) -> Result<PathBuf> {
+    let mut session = translation_session(args, config)?;
     let output = if let Some(path) = value(args, "--out") {
         PathBuf::from(path)
     } else if flag(args, "--auto-output")
@@ -124,43 +137,60 @@ pub(crate) fn download(args: &[String]) -> Result<()> {
             .unwrap_or_else(|| config.download_directory());
         directory.join(output::suggested_filename(
             &session.translate(&work.title)?,
-            &config,
+            config,
         )?)
     } else {
         bail!("필수 옵션 --out 누락; 자동 이름은 --auto-output 또는 --output-dir을 지정하세요");
     };
     let mut out = StreamingFile::create(&output)?;
-    out.write_all(output::format_header(&mut session, &work)?.as_bytes())?;
+    out.write_all(output::format_header(&mut session, work)?.as_bytes())?;
     out.flush()?;
-    for i in first..=end {
-        let file =
-            value(args, "--episode-html-dir").map(|dir| Path::new(&dir).join(format!("{i}.html")));
-        let page = match file {
-            Some(file) => fs::read_to_string(&file)
-                .with_context(|| format!("에피소드 HTML 없음: {}", file.display()))?,
-            None => {
-                if !flag(args, "--no-delay") {
-                    fetcher.rest();
-                }
-                fetcher.get(&work.episodes[i - 1])?
-            }
+    let independent = session.independent_rows();
+    let mut reader = source::Reader::new(
+        receive,
+        first,
+        end,
+        if independent {
+            source::CHAPTER_LIMIT
+        } else {
+            1
+        },
+    );
+    let mut flush = |episodes: &mut Vec<site::Episode>, number| -> Result<()> {
+        let mut completed = |number, episode: &site::Episode| {
+            eprintln!("[{number}/{end}] 저장 완료: {}", episode.title);
+            emit_progress(args, number - first + 1, end - first + 1, "chapters");
+            Ok(())
         };
-        if let Some(directory) = value(args, "--cache-html-dir") {
-            output::atomic_write(&Path::new(&directory).join(format!("{i}.html")), &page)?;
+        if independent {
+            output::write_episodes(
+                &mut out,
+                &mut session,
+                episodes,
+                number,
+                end,
+                config,
+                &mut completed,
+            )?;
+        } else {
+            for (offset, episode) in episodes.iter().enumerate() {
+                output::write_episode(
+                    &mut out,
+                    &mut session,
+                    episode,
+                    number + offset,
+                    end,
+                    config,
+                )?;
+                completed(number + offset, episode)?;
+            }
         }
-        let episode = parse_episode_with_comments(
-            work.site,
-            &page,
-            config.include_furigana,
-            config.include_comment,
-            &config.comment_separator,
-        )
-        .with_context(|| format!("에피소드 {i} 파싱 실패: {}", work.episodes[i - 1]))?;
-        output::write_episode(&mut out, &mut session, &episode, i, end, &config)?;
-        eprintln!("[{i}/{end}] 저장 완료: {}", episode.title);
-        emit_progress(args, i - first + 1, end - first + 1, "chapters");
+        episodes.clear();
+        Ok(())
+    };
+    while let Some(mut window) = reader.next_window()? {
+        flush(&mut window.episodes, window.first)?;
     }
     out.finish()?;
-    println!("Saved {} episodes to {}", end - first + 1, output.display());
-    Ok(())
+    Ok(output)
 }

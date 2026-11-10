@@ -1,6 +1,6 @@
 [package]
 name = "syousetu-translate"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "Rust web novel translation CLI with optional ezTrans compatibility"
 license = "MIT"
@@ -10,6 +10,7 @@ default-run = "syousetu-translate"
 default = ["offline-model"]
 offline-model = ["dep:candle-core", "dep:sentencepiece-rs", "dep:rayon", "dep:gemm"]
 model-tools = ["offline-model", "candle-core/safetensors"]
+inference-profile = ["offline-model"]
 legacy = ["dep:fancy-regex", "dep:libloading"]
 gui = ["offline-model", "dep:eframe", "dep:tinyfiledialogs"]
 

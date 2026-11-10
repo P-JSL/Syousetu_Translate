@@ -10,6 +10,11 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub trait Translator {
+    /// Opt in only when changing batch/chapter boundaries cannot change a
+    /// row's content through shared translation context.
+    fn independent_rows(&self) -> bool {
+        false
+    }
     fn translate(&mut self, text: &str) -> Result<String>;
     fn translate_lines(&mut self, lines: &[String]) -> Result<Vec<String>> {
         lines.iter().map(|text| self.translate(text)).collect()
@@ -32,6 +37,9 @@ pub trait Translator {
 }
 pub struct Passthrough;
 impl Translator for Passthrough {
+    fn independent_rows(&self) -> bool {
+        true
+    }
     fn translate(&mut self, text: &str) -> Result<String> {
         Ok(text.to_owned())
     }

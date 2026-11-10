@@ -75,6 +75,32 @@ Tests compare each fused operation against independent Tensor operations.
 Bitwise checks cover the tested CPU/operators; they are not a cross-platform
 floating-point identity guarantee or proof of general translation fluency.
 
+After v0.3.4, the large-prefill Q8 register block also uses a resource-count
+argument. Two output tiles and two K groups need `2*M` floating and `4*M`
+integer accumulators. At six rows those 36 accumulators exceed the 32 AVX-512
+vector registers before loading operands. Processing one K group at a time
+reduces the accumulator count to `4*M = 24`, leaving registers for operands.
+Each output still computes its original 32-value integer dot and consumes
+group scales in the original FMA order. This budget guides the implementation;
+it does not prove what the compiler emits or establish a measured speedup.
+Large prefills and the streamed full-vocabulary selector use the six-row block;
+smaller dense decoding matrices retain the existing four-row block. Numerical tests compare changed/reordered rows
+across both dispatch paths, including 257/271-row shapes and partial tiles.
+
+The streamed selector caches `128 * (sum16_left + sum16_right)` once per
+activation's 32-value group. Both integer sums and the F32 conversion/multiply
+are identical to the original correction. Dense matrices retain their original
+calculation as an independent reference and avoid allocating the auxiliary
+cache. Bias/residual fusion likewise evaluates exactly
+`residual + (projection + bias)`: it removes an intermediate buffer and pass
+without reassociating the two additions. Contiguous-offset, strided fallback,
+signed-zero/nonfinite and independent serial-model tests check these boundaries.
+
+The source/inference pipeline and opt-in phase measurements are described in
+[chapter batching](streaming-batches.md). Pipeline overlap and register budgets
+are applied cost models, not an implementation of a paper's approximate
+decoder, low-precision Strassen algorithm or GPU result.
+
 ## Cost model and release gates
 
 For `r` decoder rows, hidden width `d=1024` and vocabulary `V=128112`, output

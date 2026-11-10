@@ -19,6 +19,12 @@ enum SessionKind {
     Pool(Vec<Worker>),
 }
 impl Session {
+    pub fn independent_rows(&self) -> bool {
+        match &self.inner {
+            SessionKind::Local { engine, .. } => engine.independent_rows(),
+            SessionKind::Pool(_) => false,
+        }
+    }
     pub fn local(pipeline: Pipeline, engine: Box<dyn Translator>) -> Self {
         Self {
             inner: SessionKind::Local {

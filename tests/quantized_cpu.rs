@@ -12,7 +12,13 @@ fn changing_or_reordering_other_rows_never_changes_existing_q8_scores() {
         .num_threads(4)
         .build()
         .unwrap();
-    for (rows, n, k) in [(17, 48, 256), (65, 128, 1024), (7, 16_400, 256)] {
+    for (rows, n, k) in [
+        (17, 48, 256),
+        (65, 128, 1024),
+        (257, 48, 256),
+        (271, 112, 512),
+        (7, 16_400, 256),
+    ] {
         let weight = Tensor::from_vec(
             (0..n * k)
                 .map(|i| ((i * 17 % 997) as f32 - 498.) / 127.)

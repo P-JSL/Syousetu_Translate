@@ -88,7 +88,7 @@ fn run(
                     .is_some_and(|part| part.state.is_some())
             })
             .count();
-        let prefill_threshold = (count / 4).clamp(1, 8);
+        let prefill_threshold = (count / 4).clamp(1, 32);
         if !missing.is_empty() && (missing.len() >= prefill_threshold || ready <= count / 2) {
             let sources = missing
                 .iter()

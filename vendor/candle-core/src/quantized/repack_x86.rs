@@ -6,7 +6,6 @@
 
 use super::k_quants::{BlockQ4K, BlockQ6K, BlockQ8K, BlockQ8_0, QK8_0, QK_K};
 use super::{GgmlType, QuantizedType};
-use half::f16;
 #[cfg(target_arch = "x86_64")]
 mod dual_q8;
 #[cfg(target_arch = "x86_64")]
@@ -32,11 +31,15 @@ pub(crate) struct TileQ6K {
 }
 
 // One 32-value block group for 16 rows of q8_0 weights, stored offset by +128.
-#[repr(C)]
+#[repr(C, align(64))]
 pub(crate) struct TileQ8_0 {
-    pub(crate) d: [f16; TILE_N],
+    // Codes occupy complete cache lines. F16 scales are expanded losslessly
+    // once while packing, rather than at every activation-row block.
     pub(crate) qs: [u8; QK8_0 * TILE_N],
+    pub(crate) d: [f32; TILE_N],
 }
+const _: () = assert!(std::mem::size_of::<TileQ8_0>() == 576);
+const _: () = assert!(std::mem::align_of::<TileQ8_0>() == 64);
 
 pub(crate) enum PackedX86 {
     Q4K(Vec<TileQ4K>),
@@ -184,12 +187,12 @@ pub(crate) fn pack_q8_0(storage: &dyn QuantizedType, n: usize, k: usize) -> Pack
     for t in 0..n_tiles {
         for b in 0..kb {
             let mut tile = TileQ8_0 {
-                d: [f16::ZERO; TILE_N],
+                d: [0f32; TILE_N],
                 qs: [0; QK8_0 * TILE_N],
             };
             for r in 0..TILE_N {
                 let blk = &blocks[(t * TILE_N + r) * kb + b];
-                tile.d[r] = blk.d;
+                tile.d[r] = blk.d.to_f32();
                 for g in 0..QK8_0 / 4 {
                     for j in 0..4 {
                         tile.qs[(g * TILE_N + r) * 4 + j] = (blk.qs[g * 4 + j] as i16 + 128) as u8;
@@ -309,7 +312,7 @@ mod kernels {
             }
         }
         for (blk, isum, tile) in [(sub32, &isum_a, t0), (sub32 + 1, &isum_b, t1)] {
-            let dw = _mm512_cvtph_ps(_mm256_loadu_si256(tile.d.as_ptr() as *const _));
+            let dw = _mm512_loadu_ps(tile.d.as_ptr());
             for (m, act) in acts.iter().enumerate() {
                 let bsum = (act.bsums[blk * 2] as i32 + act.bsums[blk * 2 + 1] as i32) as f32;
                 let f = _mm512_sub_ps(_mm512_cvtepi32_ps(isum[m]), _mm512_set1_ps(128.0 * bsum));
@@ -355,7 +358,7 @@ mod kernels {
                     }
                 }
                 for (s, sums, tile) in [(sub, &ia, ta), (sub + 1, &ib, tb)] {
-                    let dw = _mm512_cvtph_ps(_mm256_loadu_si256(tile.d.as_ptr() as *const _));
+                    let dw = _mm512_loadu_ps(tile.d.as_ptr());
                     for r in 0..MT {
                         let sum =
                             (acts[r].bsums[s * 2] as i32 + acts[r].bsums[s * 2 + 1] as i32) as f32;
@@ -510,9 +513,12 @@ pub(crate) fn matmul_tiles(
         let lv = level().expect("select() gated");
         let kb = k / QK_K;
         let n_tiles = n / TILE_N;
-        let dual = lv == X86Level::Avx512Vnni && matches!(packed, PackedX86::Q8_0(_)) && m > 1;
+        let q8 = matches!(packed, PackedX86::Q8_0(_));
+        let dual = lv == X86Level::Avx512Vnni && q8 && m > 1;
         let nt_step = if dual { 2 } else { 1 };
-        let mt_step = if !dual && matches!(packed, PackedX86::Q8_0(_)) && n >= 16_384 {
+        let mt_step = if dual && m >= 256 && n < 16_384 {
+            6
+        } else if !dual && q8 && n >= 16_384 {
             kernels::MAX_MT
         } else {
             4
@@ -1169,7 +1175,7 @@ mod kernels256 {
         }
         for (blk, isum, tile) in [(sub32, &isum_a, t0), (sub32 + 1, &isum_b, t1)] {
             for h in 0..2 {
-                let dw = _mm256_cvtph_ps(_mm_loadu_si128(tile.d.as_ptr().add(h * 8) as *const _));
+                let dw = _mm256_loadu_ps(tile.d.as_ptr().add(h * 8));
                 for (m, act) in acts.iter().enumerate() {
                     let bsum = (act.bsums[blk * 2] as i32 + act.bsums[blk * 2 + 1] as i32) as f32;
                     let f =

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Only the F32 CPU layer norm and softmax used by SMaLL-100.
+//! The F32 CPU operations used by SMaLL-100.
 //! Adapted from Hugging Face Candle NN 0.11.1 ops.rs/layer_norm.rs. The
 //! accumulation order and vector reductions match the upstream CPU kernels.
 use crate::int8::Weights;
@@ -7,6 +7,7 @@ use candle_core::{cpu::kernels::VecOps, CpuStorage, Layout, Module, Result, Shap
 use rayon::prelude::*;
 pub(super) mod attention;
 pub(super) mod bias_relu;
+pub(super) mod bias_residual;
 
 fn slice<'a>(storage: &'a CpuStorage, layout: &Layout) -> Result<&'a [f32]> {
     let CpuStorage::F32(values) = storage else {
@@ -117,6 +118,7 @@ pub fn layer_norm(size: usize, eps: f64, weights: Weights) -> Result<LayerNorm> 
 }
 impl Module for LayerNorm {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        profile_scope!(Norm);
         let width = x.dim(D::Minus1)?;
         if width != self.weight.dims1()? || width != self.bias.dims1()? {
             candle_core::bail!("layer norm shape mismatch");

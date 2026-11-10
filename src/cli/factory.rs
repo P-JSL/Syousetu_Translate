@@ -201,6 +201,9 @@ struct Internal {
 }
 #[cfg(feature = "offline-model")]
 impl engine::Translator for Internal {
+    fn independent_rows(&self) -> bool {
+        true
+    }
     fn translate(&mut self, text: &str) -> Result<String> {
         self.engine.translate(text)
     }
