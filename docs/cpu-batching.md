@@ -9,6 +9,40 @@ Chapter-window ownership and profiling are described in
 [chapter batching](streaming-batches.md).
 All application, inference, glossary packing and new validation code is Rust.
 
+## v0.3.5 full-work measurements
+
+The exact implementation is `b7403b773a3359dd14c9e666a08fb00b7a5fa3b5`.
+Three new-process invocations for each complete work use full vocabulary,
+`--parallel-mode parallel --jobs 128 --no-learning --japanese --no-delay`,
+the same pinned model and cached HTML, on the four-CPU Linux host described
+below. OS file cache is not cleared. Network time is excluded. No CPU builds
+or tests run concurrently with timed inference.
+
+| Work | Recorded v0.3.2 reference | Three-run range | Median | Median time reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 35 chapters | 163.1107 s | 48.5179–48.9579 s | 48.5434 s | **70.239%** |
+| 24 chapters | 263.9015 s | 70.1182–72.6921 s | 70.6891 s | **73.214%** |
+
+The 70% gate uses the median of all three samples. One 35-chapter sample is
+about 0.025 seconds above the individual 70% threshold; this is not a claim
+that every invocation or computer meets 70%. Default capacity remains 32 for
+lower memory use. The measured profile explicitly selects 128 logical contexts
+on four compute threads. No GPU throughput or average over different PCs was
+measured, and the 90% gate has not been achieved.
+
+All six saved files are byte-identical to v0.3.4 on this CPU. Independent
+validation checks all 35/24 chapter headings, source/translation rows and order.
+The 35-chapter file has 607,263 bytes; the 24-chapter file has 938,165 bytes.
+Exact samples, peak RSS, hashes and limitations are in
+[`gate70-benchmark.json`](gate70-benchmark.json).
+
+The change batches ready chapter titles and bodies, overlaps the serial source
+loader with inference, aligns packed Q8 codes, reuses exact output corrections,
+and removes an intermediate bias/residual buffer. Full-vocabulary weights,
+tokenizer and greedy rules are unchanged. Compared with v0.3.2, the aggregate
+time comparison also includes the earlier source-layout and prose processing
+changes; it is not an isolated kernel benchmark.
+
 ## Applied research
 
 Full texts and the relevant upstream implementation were reviewed. Their

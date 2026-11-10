@@ -1,0 +1,90 @@
+{
+  "measured_at_date_utc": "2026-11-10",
+  "implementation_commit": "b7403b773a3359dd14c9e666a08fb00b7a5fa3b5",
+  "local_binary_sha256": "f4369004459c9508fd6a42b228d51a9029e59ec57ef6e7ef79f8ea83f878d6ab",
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "model": "SMaLL-100 Q8_0, unchanged prepared weights and tokenizer",
+  "platform": "Linux x86_64, AMD EPYC 9V45, CPU quota 4; GPU unavailable",
+  "rust": "rustc 1.99.1, portable generic release, thin LTO, 8 codegen units",
+  "logical_contexts": 128,
+  "compute_threads": 4,
+  "parallel_mode": "parallel",
+  "vocabulary": "full",
+  "learning": false,
+  "html": "same privately cached index and all episode pages; network excluded",
+  "timing_scope": "new process through model verification/loading, parsing, translation and final live TXT save; OS file cache is not cleared",
+  "cpu_builds_concurrent": false,
+  "reference": "recorded v0.3.2 full-work references in gate50-benchmark.json",
+  "gate_definition": "median of three complete, no-learning, full-vocabulary runs, compared with the recorded reference; all samples retained",
+  "repeated_samples": true,
+  "cross_hardware_mean": false,
+  "gate70_passed": true,
+  "gate90_passed": false,
+  "ci": {
+    "run_id": 42773746736,
+    "source_sha": "b7403b773a3359dd14c9e666a08fb00b7a5fa3b5",
+    "windows": "success",
+    "linux": "success",
+    "lint": "success",
+    "legacy": "success",
+    "annotations_per_job": 0
+  },
+  "execution_note": "Tool session reset during the loop. Two completed invocations for each work were retained and independently compared; the missing third invocation was resumed with the same binary and CPU allocation.",
+  "validation": {
+    "saved_outputs": "all six outputs are byte-identical to v0.3.4 on this CPU",
+    "structure": "all original/translation rows, chapter headings and order independently verified",
+    "semantic_accuracy_certified": false,
+    "forced_avx2": "three numeric Q8 tests, dialogue regression and two real-model serial/batch integration tests passed",
+    "production": "112 library tests passed, 2 explicit network/model tests ignored; GUI, CLI and integration checks passed",
+    "legacy": "122 library tests passed, 1 optional-asset test ignored; CLI and integration checks passed",
+    "dependencies": "255 unique production crates; no new library; profiling feature excluded from shipping build"
+  },
+  "samples": [
+    {
+      "work_url": "https://kakuyomu.jp/works/11054822663814504924",
+      "chapters": 35,
+      "reference_seconds": 163.110703742,
+      "seconds": [
+        48.543418098,
+        48.957896937,
+        48.517911399
+      ],
+      "median_seconds": 48.543418098,
+      "peak_rss_kib": [
+        1191480,
+        1292200,
+        1352036
+      ],
+      "source_lines": 6248,
+      "nonempty_source_lines": 3354,
+      "korean_lines": 3297,
+      "bytes": 607263,
+      "sha256": "cab9e0b2d556a7d979fbae8cdad652647a3c691297a4edace8aca81d208285d6",
+      "median_time_reduction_percent": 70.23897452200106,
+      "all_runs_within70_percent_threshold": false
+    },
+    {
+      "work_url": "https://kakuyomu.jp/works/16818622176193367283",
+      "chapters": 24,
+      "reference_seconds": 263.901530639,
+      "seconds": [
+        70.689121024,
+        72.692115852,
+        70.11822009
+      ],
+      "median_seconds": 70.689121024,
+      "peak_rss_kib": [
+        1182012,
+        1229240,
+        1129508
+      ],
+      "source_lines": 17041,
+      "nonempty_source_lines": 8533,
+      "korean_lines": 8457,
+      "bytes": 938165,
+      "sha256": "3dbae5872c1e8878d901e8e8156b2a33dcaf9a6144f2ee3065443a79a3fcf96b",
+      "median_time_reduction_percent": 73.21382681910318,
+      "all_runs_within70_percent_threshold": true
+    }
+  ]
+}
