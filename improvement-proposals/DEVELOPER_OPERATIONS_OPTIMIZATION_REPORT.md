@@ -253,3 +253,58 @@ IMP-S01~S05는 연산 병목 후보입니다. 추가로 **실제 INT8 모델이 
 ### 100회 + 100회 반복 검산 범위의 투명성
 
 1차 **100회**는 각 라운드에서 이 보고서의 코드 근거·연산 복잡도·추가 성능 후보·향상률 불확실성 및 서로 다른 workload/병렬도 가정을 다시 대조한 **정적·수치 검산**입니다. 2차 **100회**는 인용 논문·Amdahl, Roofline, Little 모델을 각기 다른 부하·시간비율에서 교차 확인하는 **문헌-수학 정합성 검산**입니다. 두 검산은 각 보고서에 모두 적용했습니다. 단, **200회 독립적인 전 소스 정독이나 200회 실기 벤치마크를 수행한 의미는 아니며**, 정적 계산과 모델 검산만으로 실제 달성 성능을 확정할 수 없습니다.
+
+## 5.9 성능·속도 모델 1,000회 + 논문·수학 검산 1,000회 실행 기록 (2026-11-12)
+
+**실행 방식과 횟수:** 2026-11-12(KST) 로컬 Python 3.13.5에서 실제로 실행한 결정적 합성 입력 기반 자동 검토입니다. **1차 1,000회 × 매 회 5개 서로 다른 항목 = 5,000건, 2차 1,000회 × 매 회 5개 항목 = 5,000건, 해당 저장소 총 2,000회/10,000건이며 실패는 0건**입니다. 6개 저장소 합계 12,000회/60,000건을 기록했습니다. 단순히 1,000개 개선 후보를 만들거나 문장 하나를 1,000번 출력한 것이 아닙니다. 각 라운드는 커밋/저장소/단계/라운드/항목에 의해 시드가 달라집니다.
+
+**범위의 엄격한 한계:** 이것은 **수학 모델·합성 데이터의 파라미터화된 자동 검산 1,000회씩**이며, 실제 저장소 코드를 각 1,000회씩 빌드/실행한 것도, 실모델/실제 브라우저/디스크에서 1,000번 벤치마크한 것도, 논문 본문을 1,000번 정독한 것도 아닙니다. 주요 기존 소스 4개는 별도 GitHub 조회로 내용 식별자와 Git blob SHA를 확인했습니다. 수학 검산 통과만으로 실서비스 버그가 없거나 실측 가속이 달성된다고 주장할 수 없습니다.
+
+**재현 증거:** 검산 스크립트 `performance_review_1000x2_2026-11-12.py` SHA-256 `6e272f565e2bb0741487baf11c19a7b02d1df3158a70926819eb3aeb6c5dbaa8`, 전체 결과 `performance_review_1000x2_results_2026-11-12.json` SHA-256 `1bc85836fca3c8c74c2855d81d12dd4e6412732dc1de49484b9a63803afaf09d`. 두 파일은 이번 분석 작업 산출물이며 **저장소에 소스 코드로 커밋하지 않았습니다**. 결과 JSON에는 각 검증 항목의 1,000건 시나리오 SHA-256과 첫/마지막 시드·측정이 아닌 계산 값이 포함됩니다.
+
+**1차 검산 지문:** `87e5eae44c656d8369041ced05d559e3b85c0e9f35b34cbc625da300ce5d9687`  
+**2차 검산 지문:** `a69898cda3b9a229a16ccc1d77475577d2295ae107890b05bcc20f20042e7464`  
+(각 지문은 결과 JSON에서 **항목명 사전순으로 정렬된 5개 개별 시나리오 SHA-256 문자열을 `|`로 연결한 값**의 SHA-256입니다.)
+
+### 2차 학술·수학 검산 구성
+
+| 범주 | 매 회 확인하는 핵심 불변식 | 결과 |
+|---|---|---|
+| Amdahl 상한 | 부분 개선비율 f와 단독 가속 r 변화에 대해 전체 S = 1/(1-f+f/r)의 상한 및 단조성 | **1,000/1,000 통과** |
+| Roofline 대역폭 상한 | FLOP/s ≤ min(계산 피크, 산술집약도×메모리 대역폭), 단위와 시간 하한 | **1,000/1,000 통과** |
+| Little의 법칙 | 안정된 도착률 λ<서비스율 μ에서 L=λW 및 동시성 증설의 대기 비용 | **1,000/1,000 통과** |
+| 꼬리 지연 | p50/p95/최대 지연을 분리해 평균 개선과 p95 개선을 동일시하지 않음 | **1,000/1,000 통과** |
+| 저장소 특화 학술 모델 | 저장소별 통계오차·KV 복사·네트워크 임계 경로·I/O 하한·외부정렬·HTTP 파이프라인 | **1,000/1,000 통과** |
+
+[원 논문: Amdahl](https://doi.org/10.1145/1465482.1465560), [Roofline](https://doi.org/10.1145/1498765.1498785), [Little](https://doi.org/10.1287/opre.9.3.383), [The Tail at Scale](https://research.google/pubs/the-tail-at-scale/), [Google Benchmark 반복 측정](https://github.com/google/benchmark/blob/main/docs/user_guide.md). 이 검산은 문헌의 공식을 참고한 모델 정합성 검증으로, 저자들의 실험을 재현하지 않았습니다.
+
+### 현행 전체 속도 향상 배수 — 검산으로 확정할 수 있는 것과 없는 것
+
+Amdahl의 법칙 `S=1/(1-f+f/r)`에서 **전체 시간 중 대상 hot path의 기존 비율 f**가 아직 프로파일링되지 않았으므로 **현행 대비 추가 가속 배수는 미측정/확정 불가**입니다. 예를 들어 f=10%, r=4면 전체 1.081배(시간 7.5% 절약), f=50%, r=4면 1.600배(37.5%), f=80%, r=4면 2.500배(60%)라는 **가정별 이론값**만 계산됩니다. 임의의 여러 최적화 배수를 곱하거나 과거 벤치마크 개선치와 합산하지 않습니다. 실행 최적화 변경 시 동일 자료·하드웨어에서 cold/warm 각각 5회 이상, wall time p50/p95, CPU 시간, peak RSS/heap, I/O, 결과 무결성 검증이 선행돼야 합니다.
+
+### 1차 저장소 특화 성능 검산 구성
+
+| 검산 항목 | 조건별 확인 내용 | 결과 |
+|---|---|---|
+| `kv_append_vs_concat` | Decoder KV 매 토큰 재연결 복사량 ∑t와 한 번 append t 비교 | **1,000/1,000 통과** |
+| `trigram_incremental_equivalence` | 임의 토큰열에서 전체 3-gram 검색과 증분 매핑의 banned 집합 일치 | **1,000/1,000 통과** |
+| `batch_work_budget` | CPU budget 상한 8과 논리 컨텍스트 수가 다른 점 검증 | **1,000/1,000 통과** |
+| `weight_memory_vs_runtime` | FP32/Q8_0 가중치 용량 감소를 추론시간 가속으로 오인하지 않음 | **1,000/1,000 통과** |
+| `attention_compute_lower_bound` | KV 복사를 줄여도 causal attention 쌍 수가 T(T+1)/2임을 검증 | **1,000/1,000 통과** |
+
+### 원본 소스 근거 재확인 (총 4개)
+
+| 파일 (분석 기준 커밋 링크) | Git blob SHA-1 |
+|---|---|
+| [`src/offline/model/layers/batch.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5628fa40fae4cd0c80ed319375ca1b6d953d4fc2/src/offline/model/layers/batch.rs) | `fc7e7a0dd947bd9fd9ad19f6175c52f6cd021e44` |
+| [`src/offline/runner/generation.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5628fa40fae4cd0c80ed319375ca1b6d953d4fc2/src/offline/runner/generation.rs) | `8b9070adb40613e0348daebdbcd18c7b9c00e7c8` |
+| [`src/offline/scheduler.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5628fa40fae4cd0c80ed319375ca1b6d953d4fc2/src/offline/scheduler.rs) | `8bc05c87e65c00dbe8462d5d929ada03da39fae8` |
+| [`src/offline/model/ops/attention.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5628fa40fae4cd0c80ed319375ca1b6d953d4fc2/src/offline/model/ops/attention.rs) | `6c36c7352981b5da0017beaef221f355280d48fd` |
+
+### 검산을 토대로 유지·추가할 실제 성능 개선 우선순위
+
+**우선순위 1:** `batch.rs`의 self-KV `Tensor::cat`와 `generation.rs`의 반복 3-gram 재계산을 각각 독립적으로 프로파일링합니다. 캐시 복사와 trigram 확인의 보조 비용을 O(T²)에서 O(T)로 줄이는 **알고리즘 여지**는 존재하나 Transformer attention의 점수 계산 자체는 남습니다. **우선순위 2:** batch=1/2/4/8과 `CANDLE_NUM_THREADS=1`에서 tokens/s, p95, peak RSS를 비교하고 모델·tokenizer·최종 TXT SHA 동등성을 확인합니다. **우선순위 3:** thin/fat LTO의 배포 CPU 호환성을 분리 평가합니다. 과거 35화 3.36배/24화 3.73배는 이미 달성된 기존 비교 기록이며 미래 추가 개선으로 합산하지 않습니다.
+
+**연구 적용 범위:** [ORCA](https://www.usenix.org/conference/osdi22/presentation/yu)의 iteration-level scheduling은 이미 일부 구현됨. [FlashAttention](https://proceedings.neurips.cc/paper/2022/hash/67d57c32e20fd0a7a302cb81d36e40d5-Abstract-Conference.html)은 GPU IO-aware 설계, [PagedAttention](https://doi.org/10.1145/3600006.3613165)은 대형 모델 서빙의 KV 메모리 효율 사례이므로 해당 논문의 실측 배수를 CPU 단일 사용자의 SMaLL-100에 전이하지 않습니다.
+
+---
