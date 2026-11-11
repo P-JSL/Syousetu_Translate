@@ -212,3 +212,44 @@ IMP-S01~S05는 연산 병목 후보입니다. 추가로 **실제 INT8 모델이 
 - **확인 근거:** [src/models/integrity.rs L5-L27](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/models/integrity.rs#L5-L27)은 모델 파일 크기와 SHA-256을 검사하며, [release.yml L105-L130, L163-L180](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/.github/workflows/release.yml#L105-L130)은 고정 모델 다운로드/Windows 오프라인 번역 점검 경로를 정의합니다.
 - **개선 절차:** 매 릴리스에 소스 커밋, 모델 버전·해시, 정확한 ZIP/체크섬, 깨끗한 Windows 사용자 환경의 설치·오프라인 번역·기존 설치 업그레이드를 매핑한 검증표를 보관합니다. 모델 손상·다운로드 중단·디스크 부족·실행 폴더 변경을 실패 주입 테스트로 유지합니다.
 - **합격/원복:** 빠른 모델 준비 표시나 다운로드 캐시가 실제 SHA 검사·복원 과정을 우회해서는 안 됩니다. 재설치 후 잘못된 모델이 정상으로 표시되면 릴리스를 중단합니다.
+
+## 5.8 INT8 LLM 추론·토큰 생성의 순수 추가 성능 여력 — 2단계 반복 재검토 (2026-11-11)
+
+### 기존 실측 성과 — 미래 추가 속도와 절대 혼동 금지
+
+[docs/gate70-benchmark.json](https://github.com/P-JSL/Syousetu_Translate/blob/73e01716de6bfcfc5406b68a2753f96fd968314b/docs/gate70-benchmark.json)의 2026-11-10 기록: 동일 Linux AMD EPYC 9V45(4 CPU quota)·동일 고정 HTML/모델에서 이전 reference 대비 35화 **163.11→48.54초, 3.36배**, 24화 **263.90→70.69초, 3.73배**(실행시간 70.24%·73.21% 절감). 이는 **이미 달성된 과거 개선치**, 6개 문서 내 어느 추가 후보의 예상 개선치도 아닙니다. 당시 peak RSS는 약 0.8GiB reference 대비 약 1.1–1.3GiB로 증가하는 trade-off가 있었습니다. [docs/int8-performance.md](https://github.com/P-JSL/Syousetu_Translate/blob/73e01716de6bfcfc5406b68a2753f96fd968314b/docs/int8-performance.md)의 INT8 354,200,608B vs FP32 1,330,973,772B도 **이미 배포에 반영된 가중치 용량 축소**입니다.
+
+### 신규 CPU 추론 가속 후보
+
+| 우선 | 실제 코드 | 구체적 개선·수학적 차이 | 한계 |
+|---|---|---|---|
+| 1 | [model/layers/batch.rs L59-L69](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/model/layers/batch.rs#L59-L69) | self-attention 캐시를 매 step Tensor::cat으로 재복사. 사전할당/chunk append 구조로 **KV 기록용 누적 이동 O(T²)→O(T)** 가능성 연구 | attention 계산 그 자체 O(T²), quantized projection, Tensor stride 변환은 여전히 존재. 전체 배수 미측정 |
+| 2 | [runner/generation.rs L58-L64](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/runner/generation.rs#L58-L64), [runner/batched/mod.rs L144-L149](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/runner/batched/mod.rs#L144-L149) | 반복 trigram 금지 토큰을 매 생성 step 재스캔하는 대신 **append 증분 해시**로 갱신 | 전체 보조 비용 O(T²)→기대 O(T), 동일 token ID/banned 집합 유지 필요 |
+| 3 | [model/ops/attention.rs](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/model/ops/attention.rs) | 기존 fused CPU gemm·thread-local scratch가 있어 단순 융합 중복 금지; cache misses/메모리 traffic이 높을 때만 tile/layout 시험 | GPU FlashAttention 발표 배수 직접 전이 금지 |
+| 4 | [offline/scheduler.rs L5-L56](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/scheduler.rs#L5-L56) | 짧은 작업의 serial/parallel 2회 probe cold-start 비용 분리; 길이 분포 기반 early decision 실험 | 잘못된 가속 추정으로 긴 작업 손해를 볼 수 있음 |
+| 5 | [runner/batched/mod.rs](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/offline/runner/batched/mod.rs) | 4 CPU quota에서 batch/context 1·2·4·8·16 별 tokens/s·p95·peak RSS 비교 | 논리 컨텍스트 128 ≠ CPU 128코어, p95 악화 가능 |
+| 6 | [Cargo.toml](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/Cargo.toml)의 thin LTO / 8 codegen-units | fat LTO / codegen-units=1 / target-cpu=native를 **별도 바이너리에서만** 비교 | native 빌드는 범용 Windows CPU 실행 호환성 상실 가능 |
+
+문헌 비교: [ORCA OSDI22](https://www.usenix.org/conference/osdi22/presentation/yu)의 iteration scheduling/selective batching은 **이미 이 코드에 존재**; [FlashAttention NeurIPS22](https://arxiv.org/abs/2205.14135)는 GPU HBM↔SRAM IO 최적화 원리만 참조; [PagedAttention SOSP23](https://doi.org/10.1145/3600006.3613165)의 대형 LLM 서빙 2–4배 수치는 로컬 소수 컨텍스트 CPU의 예상치가 아닙니다. 모델 pruning/다른 tokenizer/speculative token은 동일 출력 보장 없이 '성능 유지형'으로 적용 금지.
+
+**실험:** 동일 모델 SHA와 동일 35/24화 코퍼스로 새 current HEAD baseline을 만든 뒤 examples/benchmark_offline.rs·examples/benchmark_projection.rs, inference-profile 기능으로 decoder/attention/FFN/matmul, ms/token, tokens/s, first-token ms, RSS를 분해합니다. 5회 이상 측정하여 완성 텍스트 SHA와 토큰 ID가 같아야 합니다. **현행 대비 추가 추론/전체 실행 향상률: 미측정**.
+
+### 추가 향상폭 산출 원칙
+
+동일 기능·동일 입력 기준 전체 시간 T에서 대상 단계 비율 f, 그 단계만 r배 가속할 때 **전체 가속 S=1/((1−f)+f/r)**. 예시 f=10%/r=4이면 전체 **1.081배**, f=50%/r=4이면 **1.600배**, f=80%/r=4이면 **2.500배**. 모두 **가정 시나리오**이며 이 저장소의 측정값·목표치가 아닙니다. 어떤 단계만 무한히 가속해도 전체 최대 가속은 1/(1−f). CPU/메모리/네트워크를 여러 곳 개선해도 국소 배수를 곱해 전체 성능이라고 계산하지 않습니다.
+
+각 후보는 동일 커밋/CPU/메모리/OS, 동일 입력 SHA, warm/cold, 5회 이상 반복, wall-time p50/p95, CPU 시간, peak RSS, 전송 바이트, 처리량, 결과 SHA를 분리해 확인해야 합니다. **실측하지 않은 추가 개선률은 '산출 불가'**입니다.
+
+### 검증한 학술·수학 참고문헌과 경계
+
+- Amdahl (1967), https://doi.org/10.1145/1465482.1465560 — 병렬·부분 최적화의 전체 상한.
+- Williams, Waterman, Patterson (2009), https://zenodo.org/records/1236156 — Roofline의 계산/메모리 대역폭 한계.
+- Little (1961), https://doi.org/10.1287/opre.9.3.383 — 안정 상태의 동시 작업수 L=λW, 무제한 동시 실행은 지연과 메모리를 악화시킬 수 있음.
+- Dean, Barroso (2013), https://research.google/pubs/the-tail-at-scale/ — 처리 평균보다 p95/p99 tail 지연이 악화될 수 있음.
+- Google Benchmark 사용자 지침, https://google.github.io/benchmark/user_guide.html — warmup, 독립 반복 측정, 중앙값과 환경 잡음.
+
+**주의:** 문헌의 다른 CPU/GPU/서비스에서 얻은 속도 배수를 이 저장소에 곧바로 적용하지 않습니다.
+
+### 100회 + 100회 반복 검산 범위의 투명성
+
+1차 **100회**는 각 라운드에서 이 보고서의 코드 근거·연산 복잡도·추가 성능 후보·향상률 불확실성 및 서로 다른 workload/병렬도 가정을 다시 대조한 **정적·수치 검산**입니다. 2차 **100회**는 인용 논문·Amdahl, Roofline, Little 모델을 각기 다른 부하·시간비율에서 교차 확인하는 **문헌-수학 정합성 검산**입니다. 두 검산은 각 보고서에 모두 적용했습니다. 단, **200회 독립적인 전 소스 정독이나 200회 실기 벤치마크를 수행한 의미는 아니며**, 정적 계산과 모델 검산만으로 실제 달성 성능을 확정할 수 없습니다.
