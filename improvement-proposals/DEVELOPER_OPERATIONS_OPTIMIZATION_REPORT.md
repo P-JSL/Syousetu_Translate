@@ -189,3 +189,26 @@ cargo run --locked --release --features offline-model --example benchmark_projec
 ```
 
 예제는 `-- <경로>` 인자를 받지 않고 `models::default_dir()`을 사용하며, `benchmark_offline.rs`는 `SYOUSETU_BENCH_INPUT` 환경변수로 고정 입력을 받을 수 있습니다. 모델 경로의 실제 환경 변수 연결은 `models/paths.rs` 구현과 빌드 구성에 맞춰 확인해야 합니다. 표준 성공 조건은 **토큰 ID·완성 한국어 문장·화 단위 TXT·교정 기억 적용 결과 SHA 전부 일치**, 모델 파손/중단/백업 시나리오 및 최대 RSS 상한 이탈 없음입니다. 모델 자체 교체·전문학습·GPU 도입은 성능 튜닝이 아니라 **추가 의존성·품질·배포 계약이 바뀌는 별도 프로젝트**입니다.
+
+
+## 5.7 추가 보완 과제 — 실모델 품질 게이트·출력 I/O·배포 재현성 (2026-11-11)
+
+IMP-S01~S05는 연산 병목 후보입니다. 추가로 **실제 INT8 모델이 설치된 환경에서 결과가 동일함을 증명하는 절차**, 파일 쓰기 빈도, 릴리스 자산 무결성을 별도로 관리해야 합니다.
+
+### IMP-S06 · 일반 CI와 실제 모델 통합 검증을 명확히 분리 (P1)
+
+- **확인 근거:** [tests/offline_model.rs L1-L10](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/tests/offline_model.rs#L1-L10)은 모델 다운로드 없이 실행하는 일반 CI와 달리 고정 모델 파일이 필요해 테스트를 ignored로 정의합니다. [tests/quantized_cpu.rs](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/tests/quantized_cpu.rs)는 정량화 연산을 독립 검증합니다.
+- **개선 절차:** ① 개발용 CI는 현재의 단위·정적 검사 유지. ② 변경된 커널·캐시·배치 관련 PR/릴리스 후보만 고정 모델 SHA가 있는 별도 실행 환경에서 ignored 통합 테스트 및 한국어 원문 골든 코퍼스를 수행. ③ 단일/병렬, 교정 메모리 사용, 화 순서, 긴 입력, 모델 없는 상태를 별도 결과로 기록. ④ 비밀 경로·개인 소설 본문은 결과에 기록하지 않습니다.
+- **검증/원복:** 모델 준비 환경에서 cargo test --locked --release --features offline-model --test offline_model -- --ignored --nocapture 실행을 우선 검토합니다. 빌드 feature 및 모델 경로를 먼저 확인하고, 모델 SHA·출력 SHA가 달라지면 성능 향상과 무관하게 반려합니다.
+
+### IMP-S07 · 장별 출력 flush 횟수와 중단 후 복구 계약을 함께 측정 (P2 계측)
+
+- **확인 근거:** [src/translation/output/chapters.rs L39-L65](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/translation/output/chapters.rs#L39-L65)는 제목, 비어 있지 않은 번역 줄, 화 완료 시 출력 flush를 호출합니다. 같은 파일의 실패 주입 테스트는 완료된 원문 prefix를 유지하는 계약을 검사합니다.
+- **개선 절차:** HDD/SSD와 장문 100~1,000행에서 flush 호출 수, 번역 모델 추론 시간, 실제 쓰기 지연을 따로 계측합니다. 파일 쓰기가 유의미한 병목으로 입증된 경우에만 BufWriter 용량·화 단위 flush 정책의 제한적 실험을 검토하며, 진행 중 번역본 표시 및 장애 직전까지의 완료 prefix 보존 정책이 달라지는지 먼저 승인받습니다.
+- **검증/원복:** [src/translation/output/chapters.rs L109-L170](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/translation/output/chapters.rs#L109-L170)의 순서·실패 prefix 테스트를 유지. 모델 출력이 같아도 중단 후 파일 복구 범위가 줄면 반려합니다.
+
+### IMP-S08 · INT8 모델 배포와 재설치의 무결성/오프라인 설치 시험 (P1 운영)
+
+- **확인 근거:** [src/models/integrity.rs L5-L27](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/src/models/integrity.rs#L5-L27)은 모델 파일 크기와 SHA-256을 검사하며, [release.yml L105-L130, L163-L180](https://github.com/P-JSL/Syousetu_Translate/blob/612f743d9aeec166a039d865e332d58fb92b5d1b/.github/workflows/release.yml#L105-L130)은 고정 모델 다운로드/Windows 오프라인 번역 점검 경로를 정의합니다.
+- **개선 절차:** 매 릴리스에 소스 커밋, 모델 버전·해시, 정확한 ZIP/체크섬, 깨끗한 Windows 사용자 환경의 설치·오프라인 번역·기존 설치 업그레이드를 매핑한 검증표를 보관합니다. 모델 손상·다운로드 중단·디스크 부족·실행 폴더 변경을 실패 주입 테스트로 유지합니다.
+- **합격/원복:** 빠른 모델 준비 표시나 다운로드 캐시가 실제 SHA 검사·복원 과정을 우회해서는 안 됩니다. 재설치 후 잘못된 모델이 정상으로 표시되면 릴리스를 중단합니다.
