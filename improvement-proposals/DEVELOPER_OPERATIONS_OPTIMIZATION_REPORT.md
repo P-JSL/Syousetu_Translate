@@ -2,9 +2,9 @@
 
 **저장소:** [P-JSL/Syousetu_Translate](https://github.com/P-JSL/Syousetu_Translate)  
 **소스 분석 기준:** `main` / [`612f743d9aeec166a039d865e332d58fb92b5d1b`](https://github.com/P-JSL/Syousetu_Translate/commit/612f743d9aeec166a039d865e332d58fb92b5d1b)  
-**보고서 작성일:** 2026-11-11 (KST)  
+**보고서 초판:** 2026-11-11 (KST) · **교차 검증 갱신:** 2026-11-12 (KST)  
 **대상:** 개발자 · 운영자 · 릴리스 담당자  
-**개선 후보:** 5개 (우선순위·수정 위치·구현·검증·원복 기준 포함)  
+**누적 기존 IMP 개선 과제:** 8개 (초판 5개 포함, 별도 비성능 Q 제어/검토 항목 10개)  
 **상태:** 분석·구현 제안만 작성. 실제 소스 최적화·동적 성능 측정·프로그램 배포는 수행하지 않음.  
 > 문서 내 장·절 번호는 원래 6개 저장소 통합 보고서의 번호를 보존한 것입니다. 코드 근거 링크는 작성 시점의 커밋으로 고정했습니다.
 
@@ -364,3 +364,47 @@ Feasibility SHA-256: `0cd45ffd603be2b292b51aa1bced1c7baad92b6b9ed9fc2f52c6d9bce4
 Relevant new research perspective: Cache-oblivious memory access (Frigo), amortized suffix-state updates, work-stealing scheduling (Blumofe–Leiserson), microarchitectural stall analysis (Yasin), experimental paired comparison (Nelson–Matejcik).
 
 **Go/no-go before implementation:** collect source/benchmark SHA, build flags, hardware, workload sizes, current E2E wall-time and step breakdown (including p50/p95), CPU cycles, peak RSS/JS heap, I/O bytes, and strict result parity. Run baseline and candidate in randomized alternating order, minimum five complete runs each; preserve all existing public interfaces, persistence semantics and output contracts. A reduction in operation count or a theoretical upper bound **does not prove any whole-program speedup**.
+
+## 5.11 NON-PERFORMANCE QUALITY / SECURITY / RELIABILITY REVIEW — 1,000 + 1,000 scenario screenings (2026-11-12)
+
+### Review protocol and scientific scope
+
+**Actual screening performed, 2026-11-12:** 10 source-anchored controls × 10 synthetic failure classes × 10 operating contexts = **1,000 phase-I combinations**; then the same 10 controls × 10 distinct assurance methods × 10 quality attributes = **1,000 phase-II combinations**. This is **2,000 evaluated scenarios per repository, 12,000 across six repositories**, with deterministic uniqueness/consistency checks and an identical output digest on the second execution. Each permutation is a **model-based screening row**, not an application test, an independent human code review, a vulnerability finding, or proof of compliance.
+
+Phase I contexts: malformed input, corrupted persistence, denied access, simultaneous edits, cancellation, stale version, network/authentication failure, untrusted content, platform mismatch and partial publication, crossed against Windows/Linux/offline/low-disk/concurrent/fresh install/upgrade/restart/restricted account/untrusted-network environments. Phase II methods: property-based testing, metamorphic testing, state-machine verification, fault injection, STRIDE, NIST SSDF, OWASP ASVS, SLSA provenance, WCAG 2.2, and differential testing. A technique is classified **not applicable** when it has no natural relevance; the same standards are **not** force-fitted to every control. 'Existing' means a targeted protection exists in the linked source, **not** the entire threat is solved; 'proposal' is an experiment, **not** a discovered vulnerability.
+
+Evidence: Python model `review_nonperformance_1000x2.py` SHA-256 `3168cd9f7c938c391ff057280fab9a88fd61b86d42b5fba732d564627d22c5da`, summary JSON SHA-256 `e823ec751b255943238598c3a4289f67482d3d8019d5b8bb3e443425a157131b`. The local evidence package includes all 12,000 JSONL records; the files are not committed to this repository. **No target project code was executed, built or modified by this report revision.**
+
+Research/verification frameworks: [NIST SP 800-218 SSDF](https://csrc.nist.gov/pubs/sp/800/218/final), [OWASP ASVS 5.0](https://asvs.owasp.org/), [SLSA 1.2 provenance](https://slsa.dev/spec/v1.2/provenance), [WCAG 2.2](https://www.w3.org/TR/WCAG22/), [QuickCheck property-based testing (ICFP 2000)](https://doi.org/10.1145/351240.351266), [ISO/IEC 25010:2023 quality model](https://www.iso.org/standard/78176.html). These are requirements/checking approaches, **not certifications held by the programs**.
+
+### Repository-specific results and source-claim status
+
+- Phase I: **100 combinations reference the single confirmed source mismatch; 740 lower-priority; 130 existing-guard exercises; 30 test proposals**. These classifications sum to 1,000 and are scenario labels **not distinct problems**.
+- Phase II: **55 recommended trials; 469 context-dependent; 476 not relevant** (1,000 combinations, not compliance certifications).
+- Controls: **10**. Existing safeguards are listed to prevent recommending them as missing features. 'Confirmed mismatch' means an observed source/config discrepancy, **not a confirmed runtime exploit**.
+
+| ID | Non-performance contract | Source status | Source anchor | Failure scenario | Verification acceptance criterion |
+|---|---|---|---|---|---|
+| Q-S01 | Portable Windows download directory | **confirmed mismatch** | [`src/config/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/config/mod.rs) | An unset directory currently falls back to a hard-coded user path | Use current-user known folder with explicit configured path precedence; no overwrite |
+| Q-S02 | Model ready display trust level | **existing** | [`src/models/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/models/mod.rs) | Size-only badge versus full SHA loading verification | Badge must not imply full integrity; loading rejects same-size tamper |
+| Q-S03 | Damaged correction memory | **existing** | [`src/learning/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/learning/mod.rs) | Corrupt remembered replacements under restart | No automatic overwrite or silent loss of user data |
+| Q-S04 | Concurrent memory editors | **existing** | [`src/learning/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/learning/mod.rs) | Two simultaneous GUI writers | Lock, reload and atomic merge retain both accepted edits |
+| Q-S05 | Transient CLI job lifecycle | **proposal** | [`src/jobs/process.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/jobs/process.rs) | Crash, SIGTERM, disk-full config and failed spawn | Temp config cleaned or safely diagnosed; no misleading success |
+| Q-S06 | Redirect/challenge protection | **existing** | [`src/novel/network.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/novel/network.rs) | Cross-origin redirect, oversized HTML, challenge screen | Explicit rejection; no accidental login/anti-bot bypass |
+| Q-S07 | Chapter ordering and partial output | **existing** | [`src/translation/output/chapters.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/translation/output/chapters.rs) | Failure midway through multi-episode export | Completed source prefix retained, chapter order unchanged |
+| Q-S08 | Offline model payload verification | **existing** | [`src/models/integrity.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/models/integrity.rs) | Replaced model GGUF and offline extracted distribution | Verify size/SHA before inference; do not trust ready badge |
+| Q-S09 | Correction vs training distinction | **proposal** | [`src/learning/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/learning/mod.rs) | User glossary edit, restart, new release | Corrected replacement behavior without claiming model fine-tuning |
+| Q-S10 | Keyboard and error recovery | **proposal** | [`src/bin/desktop/novel.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/cae25dc4f0a82055e5b29edc8382ff320e1e2008/src/bin/desktop/novel.rs) | Keyboard-only queue, invalid path, offline failure | Focusable controls, intelligible errors and safe retry |
+
+### Cross-check and replacement ledger: old claims vs current code / other repositories
+
+1. The **Windows default download directory is confirmed non-portable**: `src/config/mod.rs:70-74` contains a fixed user home path. An explicit `download_dir` takes precedence. This is a source defect candidate, **not evidence that every PC fails**.
+2. A model-ready **size-only indicator is not SHA-256 verification**. Full model preparation/load performs separate checks; the earlier sections discussing 'ready' versus 'verified' should be interpreted accordingly.
+3. The historical 5 initial IMP items have grown to **8 IMP-S items**, separately from these 10 Q-S assurance controls. Model inference/quantization results in performance sections must not be interpreted as translation-quality certification.
+
+### Decisions and follow-on tests (non-performance only)
+
+- **Priority P0:** resolve source-confirmed mismatches or potential data-loss pathways first; preserve existing guardrails rather than replacing them with superficially shorter code. Raise code-only changes in separate reviewed PRs.
+- **Priority P1:** fault-injection, property-based and differential tests for cancellation, concurrency, corruption, update rollback and release/source parity; document the exact failure oracle and cleanup behavior.
+- **Priority P2:** accessibility, diagnosability, user documentation and source-to-build provenance; run keyboard/screen-reader acceptance where a desktop/web UI exists.
+- **No claim of completed implementation:** the model review establishes a *risk-informed test plan*, not completed remediation, runtime security testing or proof of ISO/ASVS/SLSA certification.
