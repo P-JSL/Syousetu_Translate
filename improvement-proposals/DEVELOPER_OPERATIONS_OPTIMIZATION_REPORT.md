@@ -308,3 +308,59 @@ Amdahl의 법칙 `S=1/(1-f+f/r)`에서 **전체 시간 중 대상 hot path의 �
 **연구 적용 범위:** [ORCA](https://www.usenix.org/conference/osdi22/presentation/yu)의 iteration-level scheduling은 이미 일부 구현됨. [FlashAttention](https://proceedings.neurips.cc/paper/2022/hash/67d57c32e20fd0a7a302cb81d36e40d5-Abstract-Conference.html)은 GPU IO-aware 설계, [PagedAttention](https://doi.org/10.1145/3600006.3613165)은 대형 모델 서빙의 KV 메모리 효율 사례이므로 해당 논문의 실측 배수를 CPU 단일 사용자의 SMaLL-100에 전이하지 않습니다.
 
 ---
+
+## 5.10 DIVERSE PERFORMANCE REVIEW — 1,000 feasibility + 1,000 cross-disciplinary evaluations (2026-11-12)
+
+### Scope and how the 1,000 rounds were actually run
+
+This is a **new method-diversity audit**, not 1,000 new optimizations. A reproducible Python scenario engine evaluated **10 distinct code-anchored alternatives × 10 workloads × 10 independent constraints = 1,000 feasibility cases**, and a second **10 alternatives × 10 workloads × 10 different research/theory lenses = 1,000 cross-disciplinary cases**, for **2,000 evaluated tuples per repository**. Across six repositories: 12,000 evaluated tuples. Each phase used distinct tuple keys, regenerated a stable SHA-256 and passed uniqueness/assertion checks; repeating the script gave the same summary SHA-256. `run_diverse_1000.py` SHA-256 `caecadb0696142bca8de43e1ae440152015459e8e90e8c418e9909c8a1b82de9`, `summary_6repos.json` SHA-256 `23e3ab0a3a456c954dc7f42a0df115dd9ad26fb81b6aa73c4b74850121fd98d0`.
+
+Crucial limitation: these are **automatic engineering-model evaluations over synthetic scenario parameters**, not 2,000 independent human deep reviews, 2,000 actual code executions, 2,000 program benchmarks, or independent proofs that the alternatives will be faster. The linked existing files were checked against the repository tree. **No candidate speedup is measured or guaranteed.** A "prototype" label only means a plausible experiment subject to correctness gates.
+
+10 workload families include cold start, warm small data, medium, million-item, repeated operations, high RTT, memory pressure, UI churn, slow disk and oversubscribed workloads. The 10 feasibility dimensions are exact-output parity, no new dependency, cross-platform support, bounded memory, tail latency, cold start, cancellation, crash recovery, throughput and I/O overhead.
+
+### Ten **different** research lenses (not another Amdahl/Roofline/Little loop)
+
+1. [Work stealing / dependency span](https://doi.org/10.1145/324133.324234)
+2. [Cache-oblivious memory hierarchy](https://www.fftw.org/~athena/abstracts/abstract12.html)
+3. [Bloom negative-prefilter tradeoff](https://doi.org/10.1145/362686.362692)
+4. [Roaring compressed bitmap indexes](https://doi.org/10.1002/spe.2402)
+5. [Boyer–Moore substring search](https://doi.org/10.1145/359842.359859)
+6. [Common random numbers for controlled comparisons](https://doi.org/10.1287/mnsc.41.12.1935)
+7. [HTTP strong Range validators / RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)
+8. [Top-Down microarchitectural stalls](https://doi.org/10.1109/ISPASS.2014.6844459)
+9. [INP interaction responsiveness](https://web.dev/articles/inp)
+
+We evaluated theoretical **relevance**, not automatic applicability. In particular Bloom (only safe as a negative prefilter), Roaring (posting density), string search and web INP are marked **not-relevant** when a method does not involve those resources. Amortization tests the break-even condition *repeats × saved cost > one-time setup*; work/span bounds parallel tasks; cache models distinguish L1/L2 traffic from total FLOPs; BDP = RTT × goodput informs stream window sizing; paired random numbers reduce **benchmark-estimator variance**, not runtime. These models are not interchangeable or universal optimization formulas.
+
+### Audited outcomes: methodological screening, not runtime pass rates
+
+| Phase (1,000 distinct cases each) | Result distribution | Interpretation |
+|---|---|---|
+| Feasibility | prototype-after-profiling 214; conditional-prototype 394; guard-required 75; low-priority 214; measure-first 3; reject-contract-change 100; existing-not-additional 0 | A scenario may be a good experiment, **not an implemented optimization** |
+| Research lenses | useful 360; indirect 230; not-relevant 410 | Marks applicability of a mathematical viewpoint, **not observed wins** |
+
+Feasibility SHA-256: `0cd45ffd603be2b292b51aa1bced1c7baad92b6b9ed9fc2f52c6d9bce44dc181`. Research-lens SHA-256: `de2cbb1a4ce3209e25b8d6d0dc563ae14d76a93bca3ab6788239adebb88403f7`. These hashes cover the generated 1,000-row canonical JSON arrays for the given repository. Machine-readable details are supplied in the separately delivered evidence ZIP, **not committed to this repository**.
+
+### Ten concrete alternatives, feasibility conditions and counterexamples
+
+| ID | Alternative | Verified existing source anchor | Assessment | Only meaningful when | Rejection / regression gate |
+|---|---|---|---|---|---|
+| S-ALT-01 | Append-only decoder KV buffer | [`src/offline/model/layers/batch.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/model/layers/batch.rs) | **Prototype after profiling** | Long T when Tensor::cat copies past keys/values every step | Exact Candle shape, strides and token equality |
+| S-ALT-02 | Incremental trigram state | [`src/offline/runner/generation.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/runner/generation.rs) | **Prototype after profiling** | Long output with repeated per-token windows(3) scans | Exactly matching banned next-token set |
+| S-ALT-03 | Length-bucketed iteration batches | [`src/offline/runner/batched/mod.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/runner/batched/mod.rs) | **Conditional** | Large heterogeneous multi-sentence inputs | Correct source order and correction-memory behavior |
+| S-ALT-04 | CPU attention tiling | [`src/offline/model/ops/attention.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/model/ops/attention.rs) | **Conditional; fused kernels already present** | Cache miss/PMU evidence under Q8_0 CPU model | No cross-platform CPU assumption or numerical drift |
+| S-ALT-05 | SIMD top-1 choice | [`src/offline/selection/simd.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/selection/simd.rs) | **Prototype after profiling; partial SIMD exists** | Projection select measured against current fused selector | Tie/NaN/eos/banned token parity |
+| S-ALT-06 | Duplicate-tokenization cache locality | [`src/offline/cache.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/cache.rs) | **Conditional** | Repeated sentences with unchanged correction state | Never cache across changed glossary/memory |
+| S-ALT-07 | Skip auto-probe for tiny job | [`src/offline/scheduler.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/scheduler.rs) | **Prototype after profiling** | Serial/parallel probe overhead > total small-job compute | Long mixed workload regression gate |
+| S-ALT-08 | Verified model paging/prefetch | [`src/models/integrity.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/models/integrity.rs) | **Conditional** | Cold model load I/O dominates elapsed | No SHA bypass, compare page faults/RSS and Windows |
+| S-ALT-09 | CPU-native release experiment | [`Cargo.toml`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/Cargo.toml) | **Conditional, benchmark-only** | Matching test CPU supports chosen instruction ISA | Cannot ship generic executable requiring AVX-only CPU |
+| S-ALT-10 | 4-bit different model weights | [`src/offline/model/config.rs`](https://github.com/P-JSL/Syousetu_Translate/blob/5fac4100e4a41c0cbdae81474fd5fbe01d4281da/src/offline/model/config.rs) | **Reject for same-output acceleration** | Only research as separate quality/compatibility mode | Changed translation and tokenizer/quantization behavior |
+
+### Decisions for the next experimental optimization cycle
+
+**First experiments:** (1) separately count self-KV copied bytes and trigram rescans per generated token; (2) prove exact token sequence for all code paths before running time comparisons; (3) investigate short-job auto-probe overhead and length-bucketed batches. A KV append buffer reduces **copy work** but leaves the attention's O(T²) pair interactions, and a faster argmax is useless if Q8 matrix multiplication dominates. The older 3.36×/3.73× full-work speedups and already shipped Q8_0 model compression are **historical achievements**, not future headroom.
+
+Relevant new research perspective: Cache-oblivious memory access (Frigo), amortized suffix-state updates, work-stealing scheduling (Blumofe–Leiserson), microarchitectural stall analysis (Yasin), experimental paired comparison (Nelson–Matejcik).
+
+**Go/no-go before implementation:** collect source/benchmark SHA, build flags, hardware, workload sizes, current E2E wall-time and step breakdown (including p50/p95), CPU cycles, peak RSS/JS heap, I/O bytes, and strict result parity. Run baseline and candidate in randomized alternating order, minimum five complete runs each; preserve all existing public interfaces, persistence semantics and output contracts. A reduction in operation count or a theoretical upper bound **does not prove any whole-program speedup**.
