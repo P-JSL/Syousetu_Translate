@@ -19,7 +19,7 @@ impl Worker {
         let mut command = Command::new(std::env::current_exe()?);
         command
             .arg("worker")
-            .args(args)
+            .args(worker_arguments(args)?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
@@ -108,9 +108,77 @@ impl Worker {
             .context("worker 번역 결과가 없습니다")
     }
 }
+
+// Only the parent reads command input and writes the output file. Workers get
+// each source string through stdin after they have initialized their engine.
+fn worker_arguments(args: &[String]) -> Result<Vec<String>> {
+    let mut forwarded = Vec::with_capacity(args.len());
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if matches!(
+            arg.as_str(),
+            "--text" | "--input" | "--input-encoding" | "--out"
+        ) {
+            args.next()
+                .filter(|value| !value.starts_with("--"))
+                .with_context(|| format!("옵션 {arg}의 값이 없습니다"))?;
+        } else {
+            forwarded.push(arg.clone());
+        }
+    }
+    Ok(forwarded)
+}
+
 impl Drop for Worker {
     fn drop(&mut self) {
         let _ = self.process.kill();
         let _ = self.process.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_arguments;
+
+    #[test]
+    fn engine_options_survive_removal_of_parent_input_and_output() {
+        let args = [
+            "--engine",
+            "native",
+            "--text",
+            "private source",
+            "--dictionary",
+            "dictionary.tsv",
+            "--input",
+            "source.txt",
+            "--input-encoding",
+            "utf-8",
+            "--out",
+            "novel.txt",
+            "--jobs",
+            "32",
+            "--no-learning",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            worker_arguments(&args).unwrap(),
+            [
+                "--engine",
+                "native",
+                "--dictionary",
+                "dictionary.tsv",
+                "--jobs",
+                "32",
+                "--no-learning",
+            ]
+        );
+    }
+
+    #[test]
+    fn incomplete_parent_option_is_rejected_before_spawn() {
+        for args in [vec!["--text"], vec!["--out", "--jobs", "32"]] {
+            let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert!(worker_arguments(&args).is_err());
+        }
     }
 }
