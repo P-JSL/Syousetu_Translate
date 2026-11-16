@@ -2,6 +2,10 @@
 //! source remains available for register, pauses, quoted output and corrections.
 use std::{borrow::Cow, sync::LazyLock};
 mod intent;
+mod prohibition;
+pub(super) fn prohibitive(source: &str) -> bool {
+    prohibition::matches(source)
+}
 pub(super) fn friendly_request(source: &str) -> bool {
     intent::request_stem(source).is_some()
 }
@@ -122,6 +126,9 @@ pub fn expand(source: &str) -> Cow<'_, str> {
         .any(|part| source.contains(part))
     {
         return Cow::Borrowed(source);
+    }
+    if let Some(expanded) = prohibition::expand(source) {
+        return Cow::Owned(expanded);
     }
     static MATCHER: LazyLock<aho_corasick::AhoCorasick> = LazyLock::new(|| {
         aho_corasick::AhoCorasickBuilder::new()

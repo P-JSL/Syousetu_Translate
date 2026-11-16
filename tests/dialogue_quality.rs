@@ -45,3 +45,41 @@ fn unseen_contractions_keep_obligation_negation_aspect_and_speech_level() {
         assert!(output.starts_with('“') && output.ends_with('”'));
     }
 }
+
+#[test]
+#[ignore = "requires the pinned local model; prohibitions are not correction-memory answers"]
+fn explicit_prohibitions_do_not_become_permission_or_a_double_negative() {
+    let sources = [
+        "「その水は飲んじゃだめだよ。」",
+        "「まだ中に入っちゃだめだよ。」",
+        "「もう食べちゃだめなの？」",
+    ]
+    .map(str::to_owned);
+    let memory = Memory::bundled().unwrap();
+    assert!(sources
+        .iter()
+        .all(|source| memory.resolve(source).is_none()));
+    let mut engine = OfflineTranslator::open_with_policy(
+        &syousetu_translate::models::default_dir(),
+        Memory::default(),
+        32,
+        ParallelPolicy::Parallel,
+    )
+    .unwrap();
+    let output = engine.translate_lines(&sources).unwrap();
+    assert!(
+        output[0].contains("마시지 말") && !output[0].contains("않아도"),
+        "{}",
+        output[0]
+    );
+    assert!(
+        output[1].contains("들어가지 마") && !output[1].contains("안 들어가지"),
+        "{}",
+        output[1]
+    );
+    assert!(
+        (output[2].contains("안 돼") || output[2].contains("안돼")) && output[2].contains('?'),
+        "{}",
+        output[2]
+    );
+}

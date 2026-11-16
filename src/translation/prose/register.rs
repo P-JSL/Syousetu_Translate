@@ -40,6 +40,9 @@ fn classify(source: &str) -> Register {
         if polite {
             return Register::Polite;
         }
+        if super::japanese::prohibitive(source) {
+            return Register::Casual;
+        }
         if [
             "だよ",
             "だろ",
@@ -149,6 +152,13 @@ fn noun_ending(stem: &str, register: Register) -> Option<&'static str> {
 }
 fn sentence(text: &str, register: Register, nominal: bool) -> String {
     let trimmed = text.trim_end();
+    if register == Register::Casual {
+        for (previous, corrected) in [("안 되나요", "안 돼"), ("안되나요", "안돼")] {
+            if let Some(stem) = trimmed.strip_suffix(previous) {
+                return format!("{stem}{corrected}{}", &text[trimmed.len()..]);
+            }
+        }
+    }
     for &(old, narrative, casual, polite) in ENDINGS {
         if let Some(stem) = trimmed.strip_suffix(old) {
             if register == Register::Narrative && old == "합니다" {
@@ -299,25 +309,38 @@ pub(super) fn render(source: &str, target: &str) -> String {
     let nominal = ["です", "だ", "である", "だった", "でした"]
         .iter()
         .any(|ending| tail.ends_with(ending));
-    let negative_request = [
-        "ないで",
-        "ないでね",
-        "ないでよ",
-        "ないでくれ",
-        "すんな",
-        "すんなよ",
-    ]
-    .iter()
-    .any(|ending| {
-        inner
-            .trim_end_matches(['。', '！', '？', '!', '?', '…', '.'])
-            .ends_with(ending)
-    });
-    let softened = (register == Register::Casual && negative_request).then(|| {
-        target
-            .replace("지 말아라", "지 마")
-            .replace("지 말라", "지 마")
-    });
+    let negative_request = super::japanese::prohibitive(source)
+        || [
+            "ないで",
+            "ないでね",
+            "ないでよ",
+            "ないでくれ",
+            "すんな",
+            "すんなよ",
+        ]
+        .iter()
+        .any(|ending| {
+            inner
+                .trim_end_matches(['。', '！', '？', '!', '?', '…', '.'])
+                .ends_with(ending)
+        });
+    let softened = if register == Register::Casual && negative_request {
+        Some(
+            target
+                .replace("지 말아라", "지 마")
+                .replace("지 말라", "지 마")
+                .replace("지 마세요", "지 마")
+                .replace("지 마십시오", "지 마"),
+        )
+    } else if register == Register::Polite && super::japanese::prohibitive(source) {
+        Some(
+            target
+                .replace("지 말아라", "지 마세요")
+                .replace("지 말라", "지 마세요"),
+        )
+    } else {
+        None
+    };
     let target = softened.as_deref().unwrap_or(target);
     // Only a source-explicit response at the beginning of a casual utterance
     // qualifies. Do not globally replace Korean thanks or affirmative words.
@@ -381,6 +404,22 @@ mod tests {
     }
     #[test]
     fn tense_negation_honorifics_and_noun_consonants_are_preserved() {
+        assert_eq!(
+            render("「中に入っちゃダメです。」", "안에 들어가지 말아라."),
+            "안에 들어가지 마세요."
+        );
+        assert_eq!(
+            render("「触っちゃダメですよ。」", "터치하지 말라."),
+            "터치하지 마세요."
+        );
+        assert_eq!(
+            render("「もう食べちゃだめなの？」", "더 이상 먹어도 안 되나요?"),
+            "더 이상 먹어도 안 돼?"
+        );
+        assert_eq!(
+            render("「食べちゃ駄目ですか？」", "먹어도 안 되나요?"),
+            "먹어도 안 되나요?"
+        );
         assert_eq!(
             render("「もうやってません。」", "이제 하지 않는다."),
             "이제 하지 않아요."
