@@ -260,7 +260,7 @@ pub(crate) fn try_matmul_f32(
             return Ok(false);
         }
         let dtype = storage.dtype();
-        let lhs_q = super::repack_x86::quantize_lhs(lhs, m, k);
+        let lhs_q = super::repack_x86::quantize_lhs(lhs, m, k, dtype == super::GgmlDType::Q8_0);
         if m >= 32 && dtype == super::GgmlDType::Q4K && super::repack_x86::amx_available() {
             let tiles = packed
                 .x86_amx

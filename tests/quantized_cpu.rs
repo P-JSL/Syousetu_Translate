@@ -6,6 +6,90 @@ use candle_core::{
 };
 use std::collections::HashSet;
 
+// Independent reference for the original per-32-weight / per-256-activation
+// operator. This does not use packed tiles or either SIMD matrix kernel.
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn prepacked_q8_matches_original_block_dot_and_fma_order() {
+    if std::env::var("MISTRALRS_FORCE_AVX2").as_deref() == Ok("1")
+        || !(std::is_x86_feature_detected!("avxvnni")
+            || (std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")))
+    {
+        return;
+    }
+    for (m, n, k) in [(1, 16, 256), (7, 48, 1024), (65, 32, 4096), (257, 48, 256)] {
+        let weights = (0..n * k)
+            .map(|i| ((i * 17 % 997) as f32 - 498.) / 127.)
+            .collect::<Vec<_>>();
+        let inputs = (0..m * k)
+            .map(|i| match (i / k) % 4 {
+                0 => 0.,
+                1 => ((i * 53 % 991) as f32 - 495.) / 127.,
+                2 => (i % 128) as f32,
+                _ => -((i % 128) as f32),
+            })
+            .collect::<Vec<_>>();
+        let weight = Tensor::from_vec(weights, (n, k), &Device::Cpu).unwrap();
+        let quantized = QTensor::quantize(&weight, GgmlDType::Q8_0).unwrap();
+        let raw_weights = quantized.data().unwrap().into_owned();
+        let dequantized = quantized
+            .dequantize(&Device::Cpu)
+            .unwrap()
+            .flatten_all()
+            .unwrap()
+            .to_vec1::<f32>()
+            .unwrap();
+        // F16 scale × signed-byte code is exact in F32. Dividing a nonzero
+        // dequantized code recovers the stored scale without private fields.
+        let scales = raw_weights
+            .as_chunks::<34>()
+            .0
+            .iter()
+            .enumerate()
+            .map(|(block_index, block)| {
+                block[2..]
+                    .iter()
+                    .position(|&code| code != 0)
+                    .map(|index| {
+                        dequantized[block_index * 32 + index] / block[index + 2] as i8 as f32
+                    })
+                    .unwrap_or(0.)
+            })
+            .collect::<Vec<_>>();
+        let matrix = QMatMul::from_qtensor(quantized).unwrap();
+        let input = Tensor::from_vec(inputs, (m, k), &Device::Cpu).unwrap();
+        let quantized_input = QTensor::quantize(&input, GgmlDType::Q8K).unwrap();
+        let raw_inputs = quantized_input.data().unwrap();
+        let scores = matrix.forward(&input).unwrap().to_vec2::<f32>().unwrap();
+        for (row, actual) in scores.iter().enumerate() {
+            for (column, actual) in actual.iter().enumerate() {
+                let mut expected = 0f32;
+                for block in 0..k / 32 {
+                    let weight_index = column * (k / 32) + block;
+                    let weight = &raw_weights[weight_index * 34..][..34];
+                    let activation = &raw_inputs[(row * (k / 256) + block / 8) * 292..][..292];
+                    let activation_scale = f32::from_ne_bytes(activation[..4].try_into().unwrap());
+                    let start = (block % 8) * 32;
+                    let dot = weight[2..]
+                        .iter()
+                        .zip(&activation[4 + start..4 + start + 32])
+                        .map(|(&w, &a)| w as i8 as i32 * a as i8 as i32)
+                        .sum::<i32>();
+                    expected =
+                        (dot as f32).mul_add(scales[weight_index] * activation_scale, expected);
+                }
+                assert_eq!(
+                    actual.to_bits(),
+                    expected.to_bits(),
+                    "{m}/{n}/{k}: row {row}, column {column}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn changing_or_reordering_other_rows_never_changes_existing_q8_scores() {
     let pool = rayon::ThreadPoolBuilder::new()

@@ -1,0 +1,136 @@
+{
+  "all_full_work_structural_checks_passed": true,
+  "all_outputs_byte_identical": true,
+  "alternating_process_order": true,
+  "cached_source_html": true,
+  "candidate_median_seconds": 61.127233979,
+  "candidate_sha256": "829607aaca75e2bb646cf6af907d0f2a8974f6137cc7e9f1cc3b65f4fa38a817",
+  "candidate_time_reduction_percent": 2.9682944000980815,
+  "chapters": 24,
+  "control_median_seconds": 62.997175615,
+  "control_sha256": "70cbf3ebaa85cf82eedaf2df7b639535e560a81212bc2f39cde0b3a2bcac87d9",
+  "correction_memory": false,
+  "disk_result_reuse": false,
+  "first_translation_90_percent_met": false,
+  "first_translation_95_percent_met": false,
+  "logical_contexts": 128,
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "new_process_per_sample": true,
+  "original_v032_seconds": 263.901530639,
+  "os_file_cache_cleared": false,
+  "parallel_policy": "parallel",
+  "samples": [
+    {
+      "seconds": 64.369898962,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 1,
+      "variant": "control",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    },
+    {
+      "seconds": 60.777305076,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 1,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    },
+    {
+      "seconds": 61.127233979,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 2,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    },
+    {
+      "seconds": 62.653803636,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 2,
+      "variant": "control",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    },
+    {
+      "seconds": 62.997175615,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 3,
+      "variant": "control",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    },
+    {
+      "seconds": 61.289571865,
+      "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+      "trial": 3,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      }
+    }
+  ],
+  "semantic_accuracy_certified": false,
+  "time_reduction_from_v032_percent": 76.83710517669635,
+  "url": "https://kakuyomu.jp/works/16818622176193367283",
+  "recorded_date": "2026-11-17",
+  "time_zone": "Asia/Seoul",
+  "cpu": "AMD EPYC 9V45",
+  "cpu_quota": 4,
+  "gpu_available": false,
+  "source_parent_commit": "b31e6acbadbfccc16d2501ac87e3c8ad5ec078c5",
+  "candidate": "precompute signed weight sums and offset Q8 activation codes once",
+  "previous_translation_store_opened": false,
+  "in_process_translation_cache_starts_empty": true,
+  "control_executable_bytes": 10683344,
+  "candidate_executable_bytes": 10663928,
+  "historical_reference_not_rerun": true,
+  "interpretation": "Three paired runs per work, not a multiple-PC average or universal latency guarantee. No concurrent CPU builds/model tests. OS file cache not cleared."
+}

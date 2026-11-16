@@ -73,7 +73,6 @@ pub(crate) fn run(
     eos: u32,
     blocked: &[HashSet<u32>],
 ) -> crate::Result<Vec<u32>> {
-    let corrections = dual_q8::corrections(lhs);
     let row_step = 6;
     let row_units = m.div_ceil(row_step);
     let n_tiles = n / TILE_N;
@@ -96,18 +95,8 @@ pub(crate) fn run(
                     // Kernels index destination rows from m0. A local activation
                     // slice makes both source and destination start at zero.
                     let source = &lhs[m0 * (k / 256)..(m0 + rows) * (k / 256)];
-                    let sums = &corrections[m0 * (k / 256)..(m0 + rows) * (k / 256)];
                     if columns == 32 {
-                        dual_q8::local(
-                            tiles,
-                            source,
-                            sums,
-                            k / 256,
-                            nt,
-                            0,
-                            rows,
-                            values.as_mut_ptr(),
-                        );
+                        dual_q8::local(tiles, source, k / 256, nt, 0, rows, values.as_mut_ptr());
                     } else {
                         tail(tiles, source, k / 256, nt, 0, rows, values.as_mut_ptr());
                     }

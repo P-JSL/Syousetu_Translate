@@ -1002,7 +1002,7 @@ impl QTensor {
             let slice = cpu.as_slice::<f32>()?;
             let offset = lhs.layout().start_offset();
             let lhs_data = &slice[offset..offset + m * k];
-            let lhs_q = repack_x86::quantize_lhs(lhs_data, m, k);
+            let lhs_q = repack_x86::quantize_lhs(lhs_data, m, k, dtype == GgmlDType::Q8_0);
             let packs: Vec<&repack_x86::PackedX86> = ts
                 .iter()
                 .enumerate()

@@ -45,7 +45,7 @@ impl QMatMul {
             let repack_x86::PackedX86::Q8_0(tiles) = packed else {
                 unreachable!()
             };
-            let lhs = repack_x86::quantize_lhs(&values[start..end], m, k);
+            let lhs = repack_x86::quantize_lhs(&values[start..end], m, k, true);
             return Ok(Some(repack_x86::top1::run(
                 tiles,
                 &lhs,

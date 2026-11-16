@@ -2,7 +2,8 @@
 //! vpdpbusd (AVX512-VNNI) produces 16 output columns for 4 k-values per instruction.
 //! Activations are BlockQ8K rows; q4k/q6k quants are unsigned so vpdpbusd applies
 //! directly with the min/offset terms corrected through the q8k bsums, and q8_0
-//! weights are stored offset by +128 with the same correction.
+//! weights keep their signed codes; the +128 activation offset is corrected
+//! once while packing each output block.
 
 use super::k_quants::{BlockQ4K, BlockQ6K, BlockQ8K, BlockQ8_0, QK8_0, QK_K};
 use super::{GgmlType, QuantizedType};
@@ -30,15 +31,16 @@ pub(crate) struct TileQ6K {
     pub(crate) qs: [u8; QK_K / 4 * TILE_N * 4],
 }
 
-// One 32-value block group for 16 rows of q8_0 weights, stored offset by +128.
+// One 32-value block group for 16 rows of signed q8_0 weights.
 #[repr(C, align(64))]
 pub(crate) struct TileQ8_0 {
     // Codes occupy complete cache lines. F16 scales are expanded losslessly
     // once while packing, rather than at every activation-row block.
     pub(crate) qs: [u8; QK8_0 * TILE_N],
     pub(crate) d: [f32; TILE_N],
+    pub(crate) bias: [i32; TILE_N],
 }
-const _: () = assert!(std::mem::size_of::<TileQ8_0>() == 576);
+const _: () = assert!(std::mem::size_of::<TileQ8_0>() == 640);
 const _: () = assert!(std::mem::align_of::<TileQ8_0>() == 64);
 
 pub(crate) enum PackedX86 {
@@ -60,7 +62,7 @@ pub(crate) fn select(dtype: super::GgmlDType, m: usize, n: usize, k: usize) -> b
         // Keep Q6K GEMV on compact weights; expanded tiles cost bandwidth
         // without reuse across multiple activation rows.
         D::Q6K => m > 1,
-        // pure avx2 maddubs overflows on the +128 u8 range; q8_0 needs real dpbusd
+        // Full-range unsigned activations need real dpbusd; maddubs saturates.
         D::Q8_0 => lv != X86Level::Avx2,
         _ => false,
     }
@@ -189,13 +191,15 @@ pub(crate) fn pack_q8_0(storage: &dyn QuantizedType, n: usize, k: usize) -> Pack
             let mut tile = TileQ8_0 {
                 d: [0f32; TILE_N],
                 qs: [0; QK8_0 * TILE_N],
+                bias: [0; TILE_N],
             };
             for r in 0..TILE_N {
                 let blk = &blocks[(t * TILE_N + r) * kb + b];
                 tile.d[r] = blk.d.to_f32();
+                tile.bias[r] = -128 * blk.qs.iter().map(|&value| value as i32).sum::<i32>();
                 for g in 0..QK8_0 / 4 {
                     for j in 0..4 {
-                        tile.qs[(g * TILE_N + r) * 4 + j] = (blk.qs[g * 4 + j] as i16 + 128) as u8;
+                        tile.qs[(g * TILE_N + r) * 4 + j] = blk.qs[g * 4 + j] as u8;
                     }
                 }
             }
@@ -216,6 +220,13 @@ mod kernels {
     #[inline(always)]
     unsafe fn bcast4(act: &[i8], off: usize) -> __m512i {
         _mm512_set1_epi32(std::ptr::read_unaligned(act.as_ptr().add(off) as *const i32))
+    }
+
+    #[inline(always)]
+    unsafe fn bcast_q8(act: &[i8], off: usize) -> __m512i {
+        _mm512_set1_epi32(std::ptr::read_unaligned(
+            act.as_ptr().add(off).cast::<i32>(),
+        ))
     }
 
     // q4k: one superblock tile against `mt` q8k activation blocks. Subblocks are
@@ -289,7 +300,7 @@ mod kernels {
         }
     }
 
-    // q8_0 (+128 offset weights), two 32-value block groups per call with independent
+    // q8_0 with precomputed weight sums, two 32-value block groups per call with independent
     // integer accumulators so the dpbusd latency chain never serializes at small m.
     #[target_feature(enable = "avx512f,avx512vnni,avx512bw")]
     pub(crate) unsafe fn q8_0_tile2(
@@ -299,23 +310,25 @@ mod kernels {
         sub32: usize,
         acc: &mut [[__m512; 1]],
     ) {
-        let mut isum_a = [_mm512_setzero_si512(); MAX_MT];
-        let mut isum_b = [_mm512_setzero_si512(); MAX_MT];
+        let mut isum_a = [_mm512_loadu_si512(t0.bias.as_ptr().cast()); MAX_MT];
+        let mut isum_b = [_mm512_loadu_si512(t1.bias.as_ptr().cast()); MAX_MT];
         for g4 in 0..8 {
             let wa = _mm512_loadu_si512(t0.qs.as_ptr().add(g4 * TILE_N * 4) as *const _);
             let wb = _mm512_loadu_si512(t1.qs.as_ptr().add(g4 * TILE_N * 4) as *const _);
             for (m, act) in acts.iter().enumerate() {
                 isum_a[m] =
-                    _mm512_dpbusd_epi32(isum_a[m], wa, bcast4(&act.qs, sub32 * 32 + g4 * 4));
-                isum_b[m] =
-                    _mm512_dpbusd_epi32(isum_b[m], wb, bcast4(&act.qs, (sub32 + 1) * 32 + g4 * 4));
+                    _mm512_dpbusd_epi32(isum_a[m], bcast_q8(&act.qs, sub32 * 32 + g4 * 4), wa);
+                isum_b[m] = _mm512_dpbusd_epi32(
+                    isum_b[m],
+                    bcast_q8(&act.qs, (sub32 + 1) * 32 + g4 * 4),
+                    wb,
+                );
             }
         }
-        for (blk, isum, tile) in [(sub32, &isum_a, t0), (sub32 + 1, &isum_b, t1)] {
+        for (isum, tile) in [(&isum_a, t0), (&isum_b, t1)] {
             let dw = _mm512_loadu_ps(tile.d.as_ptr());
             for (m, act) in acts.iter().enumerate() {
-                let bsum = (act.bsums[blk * 2] as i32 + act.bsums[blk * 2 + 1] as i32) as f32;
-                let f = _mm512_sub_ps(_mm512_cvtepi32_ps(isum[m]), _mm512_set1_ps(128.0 * bsum));
+                let f = _mm512_cvtepi32_ps(isum[m]);
                 acc[m][0] = _mm512_fmadd_ps(f, _mm512_mul_ps(dw, _mm512_set1_ps(act.d)), acc[m][0]);
             }
         }
@@ -323,7 +336,7 @@ mod kernels {
 
     // Fixed-size Q8 register blocks remove dynamic row loops and repeated
     // accumulator loads. The block/FMA order for each output stays identical
-    // to q8_0_tile2, including the unsigned-weight offset correction.
+    // to q8_0_tile2, with the unsigned-activation correction in integer seeds.
     #[target_feature(enable = "avx512f,avx512vnni,avx512bw")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn q8_0_unit<const MT: usize>(
@@ -342,28 +355,25 @@ mod kernels {
             for sub in (0..8).step_by(2) {
                 let ta = &tiles[nt * kb * 8 + b * 8 + sub];
                 let tb = &tiles[nt * kb * 8 + b * 8 + sub + 1];
-                let mut ia = [_mm512_setzero_si512(); MT];
-                let mut ib = [_mm512_setzero_si512(); MT];
+                let mut ia = [_mm512_loadu_si512(ta.bias.as_ptr().cast()); MT];
+                let mut ib = [_mm512_loadu_si512(tb.bias.as_ptr().cast()); MT];
                 for g in 0..8 {
                     let wa = _mm512_loadu_si512(ta.qs.as_ptr().add(g * TILE_N * 4) as *const _);
                     let wb = _mm512_loadu_si512(tb.qs.as_ptr().add(g * TILE_N * 4) as *const _);
                     for r in 0..MT {
                         ia[r] =
-                            _mm512_dpbusd_epi32(ia[r], wa, bcast4(&acts[r].qs, sub * 32 + g * 4));
+                            _mm512_dpbusd_epi32(ia[r], bcast_q8(&acts[r].qs, sub * 32 + g * 4), wa);
                         ib[r] = _mm512_dpbusd_epi32(
                             ib[r],
+                            bcast_q8(&acts[r].qs, (sub + 1) * 32 + g * 4),
                             wb,
-                            bcast4(&acts[r].qs, (sub + 1) * 32 + g * 4),
                         );
                     }
                 }
-                for (s, sums, tile) in [(sub, &ia, ta), (sub + 1, &ib, tb)] {
+                for (sums, tile) in [(&ia, ta), (&ib, tb)] {
                     let dw = _mm512_loadu_ps(tile.d.as_ptr());
                     for r in 0..MT {
-                        let sum =
-                            (acts[r].bsums[s * 2] as i32 + acts[r].bsums[s * 2 + 1] as i32) as f32;
-                        let value =
-                            _mm512_sub_ps(_mm512_cvtepi32_ps(sums[r]), _mm512_set1_ps(128.0 * sum));
+                        let value = _mm512_cvtepi32_ps(sums[r]);
                         acc[r] = _mm512_fmadd_ps(
                             value,
                             _mm512_mul_ps(dw, _mm512_set1_ps(acts[r].d)),
@@ -581,12 +591,16 @@ pub(crate) fn pack(
     }
 }
 
-// Quantize lhs rows to BlockQ8K, parallelizing only when there are multiple rows.
-pub(crate) fn quantize_lhs(lhs: &[f32], m: usize, k: usize) -> Vec<BlockQ8K> {
+// Quantize with the original rounding/scales. Q8_0 kernels then store codes in
+// offset-u8 form once; Q4K/Q6K kernels keep signed activations and their sums.
+pub(crate) fn quantize_lhs(lhs: &[f32], m: usize, k: usize, unsigned: bool) -> Vec<BlockQ8K> {
     let kb = k / QK_K;
     let mut out = vec![BlockQ8K::zeros(); m * kb];
     if m == 1 {
         BlockQ8K::from_float(&lhs[..k], &mut out);
+        if unsigned {
+            offset_codes(&mut out);
+        }
         return out;
     }
     let out_ptr = out.as_mut_ptr() as usize;
@@ -596,9 +610,20 @@ pub(crate) fn quantize_lhs(lhs: &[f32], m: usize, k: usize) -> Vec<BlockQ8K> {
             let row = &lhs[r * k..(r + 1) * k];
             let dst = unsafe { std::slice::from_raw_parts_mut(out_ptr.add(r * kb), kb) };
             BlockQ8K::from_float(row, dst);
+            if unsigned {
+                offset_codes(dst);
+            }
         }
     });
     out
+}
+
+fn offset_codes(blocks: &mut [BlockQ8K]) {
+    for block in blocks {
+        for code in &mut block.qs {
+            *code = (*code as u8 ^ 128) as i8;
+        }
+    }
 }
 
 // Fused multi-projection gemv: one lhs quantization and one barrier region across
@@ -1034,6 +1059,13 @@ mod kernels256 {
         _mm256_set1_epi32(std::ptr::read_unaligned(act.as_ptr().add(off) as *const i32))
     }
 
+    #[target_feature(enable = "avx2")]
+    unsafe fn bcast_q8_256(act: &[i8], off: usize) -> __m256i {
+        _mm256_set1_epi32(std::ptr::read_unaligned(
+            act.as_ptr().add(off).cast::<i32>(),
+        ))
+    }
+
     #[target_feature(enable = "avx2,avxvnni")]
     unsafe fn dp_vnni(acc: __m256i, w_u8: __m256i, a_i8: __m256i) -> __m256i {
         _mm256_dpbusd_avx_epi32(acc, w_u8, a_i8)
@@ -1151,8 +1183,14 @@ mod kernels256 {
         sub32: usize,
         acc: &mut [[__m256; 2]],
     ) {
-        let mut isum_a = [[_mm256_setzero_si256(); 2]; MAX_MT];
-        let mut isum_b = [[_mm256_setzero_si256(); 2]; MAX_MT];
+        let mut isum_a = [[
+            _mm256_loadu_si256(t0.bias.as_ptr().cast()),
+            _mm256_loadu_si256(t0.bias.as_ptr().add(8).cast()),
+        ]; MAX_MT];
+        let mut isum_b = [[
+            _mm256_loadu_si256(t1.bias.as_ptr().cast()),
+            _mm256_loadu_si256(t1.bias.as_ptr().add(8).cast()),
+        ]; MAX_MT];
         for g4 in 0..8 {
             for h in 0..2 {
                 let wa =
@@ -1162,24 +1200,22 @@ mod kernels256 {
                 for (m, act) in acts.iter().enumerate() {
                     isum_a[m][h] = _mm256_dpbusd_avx_epi32(
                         isum_a[m][h],
+                        bcast_q8_256(&act.qs, sub32 * 32 + g4 * 4),
                         wa,
-                        bcast4_256(&act.qs, sub32 * 32 + g4 * 4),
                     );
                     isum_b[m][h] = _mm256_dpbusd_avx_epi32(
                         isum_b[m][h],
+                        bcast_q8_256(&act.qs, (sub32 + 1) * 32 + g4 * 4),
                         wb,
-                        bcast4_256(&act.qs, (sub32 + 1) * 32 + g4 * 4),
                     );
                 }
             }
         }
-        for (blk, isum, tile) in [(sub32, &isum_a, t0), (sub32 + 1, &isum_b, t1)] {
+        for (isum, tile) in [(&isum_a, t0), (&isum_b, t1)] {
             for h in 0..2 {
                 let dw = _mm256_loadu_ps(tile.d.as_ptr().add(h * 8));
                 for (m, act) in acts.iter().enumerate() {
-                    let bsum = (act.bsums[blk * 2] as i32 + act.bsums[blk * 2 + 1] as i32) as f32;
-                    let f =
-                        _mm256_sub_ps(_mm256_cvtepi32_ps(isum[m][h]), _mm256_set1_ps(128.0 * bsum));
+                    let f = _mm256_cvtepi32_ps(isum[m][h]);
                     acc[m][h] =
                         _mm256_fmadd_ps(f, _mm256_mul_ps(dw, _mm256_set1_ps(act.d)), acc[m][h]);
                 }
