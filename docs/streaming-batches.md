@@ -55,6 +55,13 @@ Nested times overlap and must not be summed as separate stages. The default
 production build excludes these counters and timing calls, and adds no
 profiling dependency or payload file.
 
+The `kv_append` counter separately measures both K/V concatenations in the
+serial and batched paths. Its `copied_bytes` is cumulative destination payload,
+not DRAM traffic or peak allocation. Concurrent worker scopes overlap, so
+their summed seconds are not a wall-time fraction. The newer full-work
+[first-translation profile](first-translation-profile.md) records this cost,
+unchanged output hashes, and why KV paging alone does not meet the 90–95% goal.
+
 A local 35-chapter diagnostic run before cross-chapter batching measured
 27.78 seconds in encoding and 35.89 seconds in decoding, including 18.33 seconds
 in full-vocabulary projection and selection. Normalization accounted for

@@ -92,6 +92,8 @@ impl Attention {
             let v = self.shape(qkv.narrow(2, 2 * dim, dim)?)?;
             let (k, v) = match &self.cache {
                 Some((old_k, old_v)) if cache => {
+                    #[cfg(feature = "inference-profile")]
+                    let _append = crate::offline::profiling::kv_append(&[old_k, old_v, &k, &v]);
                     (Tensor::cat(&[old_k, &k], 1)?, Tensor::cat(&[old_v, &v], 1)?)
                 }
                 _ => (k, v),

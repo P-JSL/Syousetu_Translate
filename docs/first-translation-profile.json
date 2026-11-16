@@ -1,0 +1,183 @@
+{
+  "recorded_date": "2026-11-17",
+  "time_zone": "Asia/Seoul",
+  "kind": "single diagnostic run per complete work; not an acceleration benchmark",
+  "cpu": "AMD EPYC 9V45",
+  "cpu_quota": 4,
+  "gpu_available": false,
+  "logical_contexts": 128,
+  "parallel_policy": "parallel",
+  "candle_num_threads": 1,
+  "source_html": "cached; network download excluded",
+  "correction_memory": false,
+  "result_reuse": false,
+  "production_profiling": false,
+  "source_parent_commit": "179129e7ea7a8bc4b7164d76a9dc4ce1b7c66d4b",
+  "profiling_source_sha256": {
+    "src/offline/profiling.rs": "bcd99b675a94e0277437791100c7a0b1b706257a3ca7f2b9c500f3ed40c99c96",
+    "src/offline/model/layers/batch.rs": "2feebc124bacded97b48a608f4bf8cf29fc582d49fea72edd12c6bd8ed39b96c",
+    "src/offline/model/layers/mod.rs": "03caf4bbbdf0f2e434a8d8f57fec76fbe7bf5ed01c105bf9a6869a582ad8e4aa"
+  },
+  "diagnostic_cli_sha256": "cd26e7dfec572d0988e981b53487eff76eae665fe61838061fa6d597daefc6bb",
+  "model_gguf_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "interpretation": [
+    "Nested stages overlap; their seconds must not be summed as independent wall time.",
+    "KV append scopes on different workers can overlap; their summed seconds are not a wall-time fraction.",
+    "Copied bytes count concatenation destination payload, not DRAM traffic, peak memory or allocations.",
+    "Instrumentation and run-to-run variance prevent treating diagnostic timing as production latency.",
+    "Structural equality is not semantic accuracy certification.",
+    "No claim of 90-95 percent first-translation time reduction or multiple-PC/GPU averages."
+  ],
+  "samples": [
+    {
+      "chapters": 35,
+      "work_url": "https://kakuyomu.jp/works/11054822663814504924",
+      "metrics": {
+        "seconds": 67.392503287,
+        "peak_rss_kib": 1402980,
+        "exit_code": 0
+      },
+      "phases": [
+        {
+          "phase": "encoder",
+          "calls": 94,
+          "seconds": 28.701845015
+        },
+        {
+          "phase": "decoder",
+          "calls": 869,
+          "seconds": 33.43489016
+        },
+        {
+          "phase": "batch_linear",
+          "calls": 12039,
+          "seconds": 12.881726742
+        },
+        {
+          "phase": "batch_attention",
+          "calls": 5880,
+          "seconds": 6.30409759
+        },
+        {
+          "phase": "batch_ffn_including_norm",
+          "calls": 3498,
+          "seconds": 20.714161539
+        },
+        {
+          "phase": "projection_including_selection",
+          "calls": 869,
+          "seconds": 17.882056901
+        },
+        {
+          "phase": "norm",
+          "calls": 11040,
+          "seconds": 1.302397083
+        },
+        {
+          "phase": "embedding",
+          "calls": 963,
+          "seconds": 0.46036075
+        },
+        {
+          "phase": "kv_append",
+          "calls": 224472,
+          "seconds": 4.199075003,
+          "copied_bytes": 32938131456
+        }
+      ],
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      },
+      "no_cache_output_matches_reference": true,
+      "reference_output_report": "result-reuse-35.json",
+      "original_v032_seconds": 163.110703742,
+      "first_translation_90_percent_threshold_seconds": 16.3110703742,
+      "first_translation_95_percent_threshold_seconds": 8.1555351871,
+      "first_translation_90_percent_met": false,
+      "first_translation_95_percent_met": false,
+      "kv_append_sum_divided_by_wall_time": 0.062307746384159035
+    },
+    {
+      "chapters": 24,
+      "work_url": "https://kakuyomu.jp/works/16818622176193367283",
+      "metrics": {
+        "seconds": 80.604936821,
+        "peak_rss_kib": 1385328,
+        "exit_code": 0
+      },
+      "phases": [
+        {
+          "phase": "encoder",
+          "calls": 221,
+          "seconds": 36.031548696
+        },
+        {
+          "phase": "decoder",
+          "calls": 1221,
+          "seconds": 41.531758471
+        },
+        {
+          "phase": "batch_linear",
+          "calls": 20412,
+          "seconds": 17.838779034
+        },
+        {
+          "phase": "batch_attention",
+          "calls": 9876,
+          "seconds": 6.682694328
+        },
+        {
+          "phase": "batch_ffn_including_norm",
+          "calls": 6258,
+          "seconds": 27.397765189
+        },
+        {
+          "phase": "projection_including_selection",
+          "calls": 1221,
+          "seconds": 22.110192232
+        },
+        {
+          "phase": "norm",
+          "calls": 17735,
+          "seconds": 1.939134833
+        },
+        {
+          "phase": "embedding",
+          "calls": 1442,
+          "seconds": 0.413818215
+        },
+        {
+          "phase": "kv_append",
+          "calls": 350895,
+          "seconds": 3.927027177,
+          "copied_bytes": 30170185728
+        }
+      ],
+      "verification": {
+        "bytes": 937029,
+        "chapters": 24,
+        "complete": true,
+        "korean_lines": 8457,
+        "nonempty_source_lines": 8533,
+        "semantic_accuracy_certified": false,
+        "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+        "source_lines": 17041
+      },
+      "no_cache_output_matches_reference": true,
+      "reference_output_report": "result-reuse-24.json",
+      "original_v032_seconds": 263.901530639,
+      "first_translation_90_percent_threshold_seconds": 26.3901530639,
+      "first_translation_95_percent_threshold_seconds": 13.19507653195,
+      "first_translation_90_percent_met": false,
+      "first_translation_95_percent_met": false,
+      "kv_append_sum_divided_by_wall_time": 0.04871943744240851
+    }
+  ]
+}

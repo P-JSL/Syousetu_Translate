@@ -61,6 +61,8 @@ impl Layer {
                     let k = attention.shape(projected.narrow(2, dim, dim)?)?;
                     let v = attention.shape(projected.narrow(2, 2 * dim, dim)?)?;
                     let (k, v) = if let Some((old_k, old_v)) = &attention.cache {
+                        #[cfg(feature = "inference-profile")]
+                        let _append = crate::offline::profiling::kv_append(&[old_k, old_v, &k, &v]);
                         (Tensor::cat(&[old_k, &k], 1)?, Tensor::cat(&[old_v, &v], 1)?)
                     } else {
                         (k, v)
