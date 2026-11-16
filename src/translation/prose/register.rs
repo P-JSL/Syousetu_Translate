@@ -64,6 +64,8 @@ fn classify(source: &str) -> Register {
                 "ぜ",
                 "なきゃ",
                 "ちゃった",
+                "ちゃう",
+                "じゃう",
                 "てる",
                 "てない",
                 "くれない",
@@ -102,6 +104,10 @@ const ENDINGS: &[(&str, &str, &str, &str)] = &[
     ("했습니까", "했는가", "했어", "했어요"),
     ("합니까", "하는가", "해", "해요"),
     ("아닙니다", "아니다", "아니야", "아니에요"),
+    ("그렇습니다", "그렇다", "그래", "그래요"),
+    ("감사합니다", "감사한다", "고마워", "고마워요"),
+    ("미안합니다", "미안하다", "미안해", "미안해요"),
+    ("죄송합니다", "죄송하다", "죄송해", "죄송해요"),
     ("모릅니다", "모른다", "몰라", "몰라요"),
     ("압니다", "안다", "알아", "알아요"),
     ("괜찮습니다", "괜찮다", "괜찮아", "괜찮아요"),
@@ -258,6 +264,18 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
             }
         }
     }
+    // The finite negative ending is unambiguous; do not conjugate arbitrary
+    // 다 endings (which may be nouns or irregular adjectives).
+    if matches!(register, Register::Casual | Register::Polite) {
+        if let Some(stem) = trimmed.strip_suffix("지 않는다") {
+            let ending = if register == Register::Casual {
+                "지 않아"
+            } else {
+                "지 않아요"
+            };
+            return format!("{stem}{ending}{}", &text[trimmed.len()..]);
+        }
+    }
     if register == Register::Casual {
         if let Some(stem) = trimmed.strip_suffix("어요") {
             let past = stem.chars().next_back().is_some_and(|ch| {
@@ -281,12 +299,50 @@ pub(super) fn render(source: &str, target: &str) -> String {
     let nominal = ["です", "だ", "である", "だった", "でした"]
         .iter()
         .any(|ending| tail.ends_with(ending));
-    let softened = (register == Register::Casual
-        && ["しないで", "すんな"]
-            .iter()
-            .any(|part| source.contains(part)))
-    .then(|| target.replace("지 말라", "지 마"));
+    let negative_request = [
+        "ないで",
+        "ないでね",
+        "ないでよ",
+        "ないでくれ",
+        "すんな",
+        "すんなよ",
+    ]
+    .iter()
+    .any(|ending| {
+        inner
+            .trim_end_matches(['。', '！', '？', '!', '?', '…', '.'])
+            .ends_with(ending)
+    });
+    let softened = (register == Register::Casual && negative_request).then(|| {
+        target
+            .replace("지 말아라", "지 마")
+            .replace("지 말라", "지 마")
+    });
     let target = softened.as_deref().unwrap_or(target);
+    // Only a source-explicit response at the beginning of a casual utterance
+    // qualifies. Do not globally replace Korean thanks or affirmative words.
+    let response = if register == Register::Casual {
+        [
+            ("ありがとう、", "감사합니다,", "고마워,"),
+            ("ありがとう、", "감사해요,", "고마워,"),
+            ("うん、", "그렇습니다,", "응,"),
+            ("うん、", "네,", "응,"),
+        ]
+        .iter()
+        .find_map(|(source_prefix, previous, corrected)| {
+            inner
+                .starts_with(source_prefix)
+                .then(|| {
+                    target
+                        .strip_prefix(previous)
+                        .map(|tail| format!("{corrected}{tail}"))
+                })
+                .flatten()
+        })
+    } else {
+        None
+    };
+    let target = response.as_deref().unwrap_or(target);
     let mut result = String::with_capacity(target.len());
     let mut start = 0;
     for (index, ch) in target.char_indices() {
@@ -325,6 +381,41 @@ mod tests {
     }
     #[test]
     fn tense_negation_honorifics_and_noun_consonants_are_preserved() {
+        assert_eq!(
+            render("「もうやってません。」", "이제 하지 않는다."),
+            "이제 하지 않아요."
+        );
+        assert_eq!(
+            render("「やってないんだよ。」", "하지 않는다."),
+            "하지 않아."
+        );
+        assert_eq!(render("「ありがとよ！」", "감사합니다!"), "고마워!");
+        assert_eq!(
+            render(
+                "「ありがとう、助かったよ！」",
+                "감사합니다, 덕분에 살았습니다!"
+            ),
+            "고마워, 덕분에 살았어!"
+        );
+        assert_eq!(
+            render("「うん、平気だよ。」", "그렇습니다, 괜찮습니다."),
+            "응, 괜찮아."
+        );
+        assert_eq!(
+            render("「ううん、違うんだよ。」", "그렇습니다, 다릅니다."),
+            "그렇습니다, 다릅니다."
+        );
+        assert_eq!(
+            render("「無理しないでね。」", "무리하지 말아라."),
+            "무리하지 마."
+        );
+        assert_eq!(
+            render(
+                "「彼は『来ないで』と言った。」",
+                "그는 ‘오지 말아라’라고 말했다."
+            ),
+            "그는 ‘오지 말아라’라고 말했다."
+        );
         assert_eq!(
             render("「来なかったんだよ」", "그분은 오지 않으셨습니다."),
             "그분은 오지 않으셨어."

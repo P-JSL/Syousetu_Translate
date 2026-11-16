@@ -1,9 +1,51 @@
 //! Source-aware typography. It preserves words, units and speech register.
+mod address;
 pub mod japanese;
 mod meaning;
 mod register;
+mod relations;
 mod typography;
 pub use typography::finish;
+
+/// Process matching source/output lines without guessing a new paragraph map.
+pub fn finish_lines(source: &str, generated: &str) -> String {
+    fn line(source: &str, generated: &str) -> String {
+        if source
+            .chars()
+            .any(|ch| matches!(ch, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{9fff}'))
+            && generated.chars().any(|ch| ('가'..='힣').contains(&ch))
+        {
+            finish(source, generated)
+        } else {
+            generated.to_owned()
+        }
+    }
+    if !source.contains('\n') {
+        return line(source, generated);
+    }
+    let source = source.split('\n').collect::<Vec<_>>();
+    let target = generated.split('\n').collect::<Vec<_>>();
+    if source.len() != target.len()
+        || source
+            .iter()
+            .zip(&target)
+            .any(|(source, target)| source.trim().is_empty() != target.trim().is_empty())
+    {
+        return generated.to_owned();
+    }
+    source
+        .iter()
+        .zip(target)
+        .map(|(source, target)| {
+            if let Some(content) = target.strip_suffix('\r') {
+                format!("{}\r", line(source, content))
+            } else {
+                line(source, target)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Utterance<'a> {

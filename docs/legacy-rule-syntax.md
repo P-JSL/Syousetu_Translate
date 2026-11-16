@@ -77,3 +77,8 @@ transfer VM still requires verified field meanings, morphology/POS context,
 direction, rule ordering and differential testing against the original engine.
 Source-aware, engine-independent prose corrections are a separate integration
 boundary; they must not be advertised as executing this unverified VM.
+That boundary is now shared by the native/ezTrans compatibility pipelines and
+the neural runner, including approved correction memory. The
+[natural-language review](natural-language-review-2026-11.md) distinguishes
+these independently authored Japanese→Korean safeguards from the parsed
+Korean→Japanese legacy tables.

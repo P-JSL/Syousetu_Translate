@@ -188,10 +188,21 @@ pub(super) fn pipeline_from_args(args: &[String], config: &Config) -> Result<Pip
         || (value(args, "--engine").is_none()
             && !flag(args, "--passthrough")
             && (value(args, "--eztrans-dir").is_some() || config.translator_name == "eztrans"));
-    Ok(if legacy {
+    let pipeline = if legacy {
         Pipeline::legacy(dict)
     } else {
         Pipeline::new(dict)
+    };
+    // Raw differential/experimental paths keep their reference output. The
+    // internal model already processes generated text before user term edits.
+    if passthrough || flag(args, "--ehnd-regex-experimental") || flag(args, "--ehnd-literal-only") {
+        return Ok(pipeline);
+    }
+    let pipeline = pipeline.with_natural_text();
+    Ok(if config.learning_enabled {
+        pipeline.with_memory(crate::learning::Memory::load(&config.memory_file())?)
+    } else {
+        pipeline
     })
 }
 #[cfg(feature = "offline-model")]

@@ -96,3 +96,15 @@ pub(super) fn is_japanese(s: &str) -> bool {
 pub(super) fn is_emoji(c: char) -> bool {
     matches!(c,'\u{1F300}'..='\u{1F77F}'|'\u{2600}'..='\u{26FF}'|'\u{2700}'..='\u{27BF}')
 }
+pub(super) fn normalize_punctuation(input: &str) -> String {
+    input
+        .chars()
+        .map(|ch| match ch {
+            '～' => '~',
+            '（' => '(',
+            '）' => ')',
+            '？' => '?',
+            _ => ch,
+        })
+        .collect()
+}

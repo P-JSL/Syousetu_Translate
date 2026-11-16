@@ -3,9 +3,16 @@ use anyhow::{Context, Result};
 use std::{collections::BTreeMap, fs, path::Path};
 fn main() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let text = fs::read_to_string(root.join("data/learning/ja-ko-speech.tsv"))?;
+    for stem in ["ja-ko-speech", "ja-ko-speech-v2"] {
+        pack(root, stem)?;
+    }
+    Ok(())
+}
+fn pack(root: &Path, stem: &str) -> Result<()> {
+    let source = root.join(format!("data/learning/{stem}.tsv"));
+    let text = fs::read_to_string(&source)?;
     let text = text.replace("\\t", "\t");
-    fs::write(root.join("data/learning/ja-ko-speech.tsv"), &text)?;
+    fs::write(&source, &text)?;
     let mut entries = BTreeMap::new();
     for (index, line) in text
         .lines()
@@ -31,11 +38,11 @@ fn main() -> Result<()> {
     let bytes = serde_json::to_vec(&serde_json::json!({"version":1,"entries":entries}))?;
     let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&bytes, 9);
     fs::write(
-        root.join("data/learning/ja-ko-speech.json.zlib"),
+        root.join(format!("data/learning/{stem}.json.zlib")),
         &compressed,
     )?;
     println!(
-        "entries={} compressed_bytes={}",
+        "{stem} entries={} compressed_bytes={}",
         entries.len(),
         compressed.len()
     );

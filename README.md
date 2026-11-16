@@ -158,6 +158,8 @@ GUI의 **웹소설** 탭에 `SMaLL-100 INT8 준비됨 · 번역은 오프라인`
 
 교정 데이터는 사용자 데이터 폴더의 `corrections.json.zlib` 등에 보관되며, 이전 JSON 프로필도 지원합니다. 이는 **번역 메모리**이지 모델 가중치를 재학습하는 기능이 아닙니다. 자동 생성 번역을 임의로 학습 데이터로 수집하지 않습니다.
 
+기본 대화 교정 292개도 함께 제공됩니다. 감사·위로·사과·부탁·독백·존대 등의 표현을 포함하며, 사용자가 저장한 동일 문장의 교정이 우선합니다. 업데이트 후에도 사용자가 삭제한 이전 기본 교정은 다시 추가하지 않습니다.
+
 ## 5. 문제 해결
 
 | 현상 | 확인 및 조치 |
@@ -258,6 +260,7 @@ cargo run --locked --release -- memory --forget --source "私は学生です。"
 | [프로젝트 구조](docs/architecture.md) | Rust 모듈 구조 및 주요 동작 규칙 |
 | [CPU 병렬 처리](docs/cpu-batching.md) | 작업자 수, CPU 배치 및 성능 검증 |
 | [대화·축약형 처리](docs/dialogue-and-contractions.md) | 일본어 축약형과 한국어 구어체 처리 |
+| [한국어 표현 비교](docs/natural-language-review-2026-11.md) | 128문장 전후 비교, 공통 엔진 처리 및 남아 있는 오역 |
 | [이식 범위](docs/porting-status.md) | 이전 Java 프로그램 및 DLL 호환성의 구현 범위 |
 | [릴리스 프로세스](docs/release-flow.md) | CI 검증, 패키징 및 배포 절차 |
 | [서드파티 고지](THIRD_PARTY_NOTICES.md) | 외부 모델·라이브러리 및 라이선스 고지 |

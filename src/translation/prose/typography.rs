@@ -44,29 +44,54 @@ fn unwrap_target(text: &str) -> &str {
         ('(', ')'),
         ('（', '）'),
     ] {
-        let content = text.strip_prefix(open).unwrap_or(text);
+        let prefix = text.strip_prefix(open);
+        let content = prefix.unwrap_or(text);
+        let mut depth = 0usize;
+        let mut fallback = None;
         for (end, ch) in content.char_indices() {
-            if ch == close
-                && content[end + ch.len_utf8()..].chars().all(|tail| {
-                    tail.is_whitespace()
-                        || matches!(
-                            tail,
-                            '.' | '!'
-                                | '?'
-                                | '。'
-                                | '！'
-                                | '？'
-                                | '…'
-                                | '”'
-                                | '’'
-                                | '」'
-                                | '』'
-                                | '"'
-                        )
-                })
-            {
-                return content[..end].trim();
+            if open != close && ch == open {
+                depth += 1;
             }
+            if ch != close {
+                continue;
+            }
+            let nested = depth > 0;
+            depth = depth.saturating_sub(1);
+            if content[end + ch.len_utf8()..].chars().all(|tail| {
+                tail.is_whitespace()
+                    || matches!(
+                        tail,
+                        '.' | '!' | '?' | '。' | '！' | '？' | '…' | '”' | '’' | '」' | '』' | '"'
+                    )
+            }) {
+                if prefix.is_none() || !nested {
+                    return content[..end].trim();
+                }
+                fallback = Some(content[..end].trim());
+            }
+        }
+        if let Some(content) = fallback {
+            return content;
+        }
+    }
+    text
+}
+fn remove_unmatched_opening<'a>(utterance: Utterance<'_>, mut text: &'a str) -> &'a str {
+    // A source with an explicit nested quotation owns that boundary. Do not
+    // mistake it for a model-generated extra opening quote.
+    if utterance.inner.starts_with(['「', '『', '“', '‘', '"']) {
+        return text;
+    }
+    for (open, close) in [('“', '”'), ('‘', '’'), ('「', '」'), ('『', '』')] {
+        let excess = text
+            .matches(open)
+            .count()
+            .saturating_sub(text.matches(close).count());
+        for _ in 0..excess {
+            let Some(content) = text.strip_prefix(open) else {
+                break;
+            };
+            text = content.trim_start();
         }
     }
     text
@@ -80,13 +105,16 @@ pub fn finish(source: &str, generated: &str) -> String {
     let utterance = Utterance::parse(source);
     let squeezed = squeeze(generated);
     let text = if utterance.quotes.is_some() {
-        unwrap_target(&squeezed).to_owned()
+        remove_unmatched_opening(utterance, unwrap_target(&squeezed)).to_owned()
     } else {
         squeezed
     };
     let text = super::meaning::completion(source, &text);
     let text = super::meaning::request(source, &text);
+    let text = super::meaning::formal_apology(source, &text);
     let mut text = super::register::render(source, &text);
+    text = super::address::restore(utterance, &text).unwrap_or(text);
+    text = super::relations::restore(utterance, &text).unwrap_or(text);
     let inner = utterance.inner;
     let prefix = inner
         .chars()
@@ -120,6 +148,37 @@ pub fn finish(source: &str, generated: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn duplicate_openings_are_removed_without_losing_balanced_nested_quotes() {
+        assert_eq!(
+            finish(
+                "「ボブはこの町には住んでないよ。」",
+                "““바브는 이 도시에 살지 않는다.”"
+            ),
+            "“바브는 이 도시에 살지 않아.”"
+        );
+        assert_eq!(
+            finish(
+                "「『待って』と彼は言った。」",
+                "“‘기다려’라고 그가 말했다.”"
+            ),
+            "“‘기다려’라고 그가 말했다.”"
+        );
+        assert_eq!(
+            finish("「『待って』という言葉。」", "““기다려”라는 말.”"),
+            "““기다려”라는 말.”"
+        );
+    }
+    #[test]
+    fn an_explicit_royal_vocative_is_not_replaced_with_an_unrelated_phrase() {
+        assert_eq!(
+            finish(
+                "「陛下、ご命令をお待ちしております。」",
+                "우리 영광스럽게도, 당신의 명령을 기다리고 있습니다."
+            ),
+            "“폐하, 당신의 명령을 기다리고 있습니다.”"
+        );
+    }
     #[test]
     fn generated_spacing_is_cleaned_without_joining_words_or_changing_numbers() {
         assert_eq!(

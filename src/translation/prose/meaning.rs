@@ -1,4 +1,4 @@
-//! Small, source-qualified aspect corrections. Never change an arbitrary
+//! Small, source-qualified aspect and speech-act corrections. Never change an arbitrary
 //! Korean "아/어 봤다" (which may genuinely describe an experience).
 use std::borrow::Cow;
 pub(super) fn request<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
@@ -31,7 +31,12 @@ pub(super) fn completion<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
     let utterance = super::Utterance::parse(source);
     if utterance.quotes.is_none()
         || source.contains("てみ")
+        || source.contains("でみ")
         || source.contains("試し")
+        || source.contains("ことが")
+        || source.contains("ことは")
+        || utterance.inner.contains(['「', '」', '『', '』'])
+        || target.contains(['“', '”', '‘', '’', '「', '」'])
         || utterance
             .inner
             .matches(['。', '!', '！', '?', '？'])
@@ -44,9 +49,47 @@ pub(super) fn completion<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
         ("食べちゃった", "食べてしまった", "먹어봤", "먹어버렸"),
         ("飲んじゃった", "飲んでしまった", "마셔봤", "마셔버렸"),
         ("買っちゃった", "買ってしまった", "사봤", "사버렸"),
+        ("読んじゃった", "読んでしまった", "읽어봤", "읽어버렸"),
+        ("読んじゃった", "読んでしまった", "읽어보았", "읽어버렸"),
+        ("話しちゃった", "話してしまった", "말해봤", "말해버렸"),
+        ("話しちゃった", "話してしまった", "말해보았", "말해버렸"),
+        ("話しちゃった", "話してしまった", "얘기해 봤", "얘기해 버렸"),
+        (
+            "話しちゃった",
+            "話してしまった",
+            "얘기해 보았",
+            "얘기해 버렸",
+        ),
+        ("聞いちゃった", "聞いてしまった", "들어봤", "들어버렸"),
     ] {
         if (source.contains(contraction) || source.contains(expanded)) && target.contains(wrong) {
             return Cow::Owned(target.replace(wrong, corrected));
+        }
+    }
+    Cow::Borrowed(target)
+}
+
+pub(super) fn formal_apology<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
+    let utterance = super::Utterance::parse(source);
+    let source = utterance
+        .inner
+        .trim_end_matches(['。', '！', '!', '…', '.']);
+    let target_body = target.trim_end_matches(['。', '.', '!', '！', '…']);
+    if utterance.inner.contains(['「', '」', '『', '』'])
+        || target.contains(['“', '”', '‘', '’', '「', '」'])
+    {
+        return Cow::Borrowed(target);
+    }
+    for (source_ending, previous, corrected) in [
+        ("申し訳ございませんでした", "미안했어요", "죄송했습니다"),
+        ("申し訳ございませんでした", "미안했습니다", "죄송했습니다"),
+        ("申し訳ございません", "미안해요", "죄송합니다"),
+        ("申し訳ございません", "미안합니다", "죄송합니다"),
+    ] {
+        if source.ends_with(source_ending) {
+            if let Some(stem) = target_body.strip_suffix(previous) {
+                return Cow::Owned(format!("{stem}{corrected}{}", &target[target_body.len()..]));
+            }
         }
     }
     Cow::Borrowed(target)
@@ -65,9 +108,46 @@ mod tests {
             "「食べてみたよ」",
             "「試しに食べちゃったよ」",
             "旅行先で食べちゃった。",
+            "「『食べちゃった』という表現です」",
+            "「読んでみてから、食べちゃったんだよ」",
         ] {
             assert_eq!(completion(source, "한번 먹어봤어."), "한번 먹어봤어.");
         }
+        let mixed = "先に読んじゃったけど、前にも読んだことがある。";
+        assert_eq!(
+            completion(&format!("「{mixed}」"), "먼저 읽어봤고, 예전에도 읽어봤어."),
+            "먼저 읽어봤고, 예전에도 읽어봤어."
+        );
+        assert_eq!(
+            completion("「もう全部読んじゃったんだよ」", "이제 다 읽어봤어."),
+            "이제 다 읽어버렸어."
+        );
+        assert_eq!(
+            completion("「つい話しちゃった。」", "그만 얘기해 보았어."),
+            "그만 얘기해 버렸어."
+        );
+    }
+    #[test]
+    fn explicit_formal_apology_keeps_past_tense_and_is_not_a_quoted_or_negated_apology() {
+        assert_eq!(
+            formal_apology("「陛下、申し訳ございません。」", "폐하, 미안해요."),
+            "폐하, 죄송합니다."
+        );
+        assert_eq!(
+            formal_apology("「本当に申し訳ございませんでした。」", "정말 미안했어요."),
+            "정말 죄송했습니다."
+        );
+        for source in [
+            "「ごめんね。」",
+            "「申し訳ございませんとは言わない。」",
+            "「『申し訳ございません』という言葉。」",
+        ] {
+            assert_eq!(formal_apology(source, "미안해요."), "미안해요.");
+        }
+        assert_eq!(
+            formal_apology("「申し訳ございません。」", "미안하지 않아요."),
+            "미안하지 않아요."
+        );
     }
     #[test]
     fn friendly_request_is_not_a_third_person_refusal() {

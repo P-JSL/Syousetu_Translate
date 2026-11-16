@@ -16,9 +16,20 @@ defaults. This is translation-memory adaptation; it does not retrain model weigh
 
 Resource scope and importer exclusions: [resource audit](../../docs/resource-audit.md).
 
-`ja-ko-speech.tsv` adds 112 independently authored whole spoken utterances.
-Its versioned zlib JSON is 1,425 bytes and is embedded separately. Generate it
-with `cargo run --locked --example pack_speech`. A persisted revision applies
-these entries once without restoring later user deletions. Quoted/periodless
-whole-utterance aliases do not authorize substring replacement of slang inside
-other sentences. See [dialogue processing](../../docs/dialogue-and-contractions.md).
+`ja-ko-speech.tsv` supplies the original 112 independently authored spoken
+utterances (1,425 compressed bytes). `ja-ko-speech-v2.tsv` adds 180 more
+(4,194 compressed bytes): reassurance, apology, requests, prohibition,
+permission, hesitation, emotion, monologue and explicit formal address.
+Generate both assets with `cargo run --locked --example pack_speech`.
+Revision 2 adds only its new entries; it does not reinstall deleted revision-1
+entries or overwrite existing user sentences/terms. Deletions made after the
+upgrade also remain deleted. This is 292 authored speech entries in two sets,
+not 292 additional training samples or a model-quality score.
+
+Quoted/periodless whole-utterance aliases do not authorize substring replacement
+inside other sentences. The 128 model-review sentences are excluded from these
+defaults. The application's internal, native and ezTrans compatibility modes
+can use the same memory; `--no-learning` bypasses it. Explicit filter-dictionary
+entries take precedence in the compatibility pipeline. See
+[dialogue processing](../../docs/dialogue-and-contractions.md) and the
+[November review](../../docs/natural-language-review-2026-11.md).

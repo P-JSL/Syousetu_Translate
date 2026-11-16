@@ -1,0 +1,64 @@
+{
+  "review_date_kst": "2026-11-16",
+  "candidate_binary_sha256": "8b6297d1b8f78a0b1a643ca02fca783447e982c0b8fba06ee5c6df26c364943a",
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "host": {
+    "platform": "Linux x86_64",
+    "cpu": "AMD EPYC 9V45",
+    "cpu_quota": 4,
+    "gpu": false
+  },
+  "settings": {
+    "engine": "internal",
+    "logical_contexts": 128,
+    "parallel_policy": "parallel",
+    "correction_memory": false,
+    "bilingual_output": true,
+    "cached_html": true,
+    "network_used_for_translation": false,
+    "simultaneous_cpu_build_or_model_test": false,
+    "os_file_cache_cleared": false,
+    "fresh_process_per_work": true,
+    "runs_per_work": 1
+  },
+  "works": [
+    {
+      "url": "https://kakuyomu.jp/works/11054822663814504924",
+      "start": 1,
+      "chapters": 35,
+      "seconds": 49.333672185,
+      "peak_rss_kib": 1320940,
+      "exit_code": 0,
+      "bytes": 607026,
+      "source_lines": 6248,
+      "nonempty_source_lines": 3354,
+      "korean_lines": 3297,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "complete": true
+    },
+    {
+      "url": "https://kakuyomu.jp/works/16818622176193367283",
+      "start": 1,
+      "chapters": 24,
+      "seconds": 73.941917657,
+      "peak_rss_kib": 1320540,
+      "exit_code": 0,
+      "bytes": 937050,
+      "source_lines": 17041,
+      "nonempty_source_lines": 8533,
+      "korean_lines": 8457,
+      "sha256": "910f65b7abd56bf6cb98bb6edcad6ae4cff9caec1971f8c09e006eb381351b27",
+      "complete": true
+    }
+  ],
+  "structural_validation": [
+    "all chapter markers and totals",
+    "chapter order and original titles",
+    "all source rows in order",
+    "nonempty translation for each nonempty source",
+    "paragraph boundaries and no extra body rows"
+  ],
+  "semantic_accuracy_certified": false,
+  "new_speed_target_certified": false,
+  "novel_text_included_in_repository": false
+}

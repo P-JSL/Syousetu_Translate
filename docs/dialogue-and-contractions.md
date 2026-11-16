@@ -23,13 +23,24 @@ package is required.
   is ignored; explicit paragraphs, blank paragraphs, `<br>` and preformatted
   content remain distinct. Bilingual paragraph breaks are emitted once.
 
-An independently compressed **112-utterance** default memory supplies common
+An independently compressed **292-utterance** default memory supplies common
 spoken forms, including `りょ`, `あざす`, `マジで？` and `それな。`.
-Its reviewable source is `data/learning/ja-ko-speech.tsv`; generate the compressed
-asset with `cargo run --locked --example pack_speech`. Whole-utterance matching
+Its reviewable sources are `data/learning/ja-ko-speech.tsv` (112) and
+`data/learning/ja-ko-speech-v2.tsv` (180); generate both compressed
+assets with `cargo run --locked --example pack_speech`. Whole-utterance matching
 also supports quotation frames, punctuation width and an omitted final period.
 It does not replace matching substrings inside unrelated sentences. Ambiguous
 slang such as `草` and `やばい` is not globally assigned one Korean meaning.
+
+The CLI's native/ezTrans compatibility pipelines now opt into the same Japanese
+normalization, Korean prose processing and correction memory. The public raw
+engine API and explicit EHND differential paths retain their reference behavior.
+Library users can opt in with `Pipeline::with_natural_text().with_memory(memory)`.
+Explicit filter-dictionary spellings/spacing and exact user memory edits keep
+priority. Matching multiline output preserves blank rows/CRLF; mismatched
+paragraph maps are not guessed. The original ezTrans Windows DLL runtime has
+not been executed on this Linux host. See the
+[128-case review and limits](natural-language-review-2026-11.md).
 
 Explicit user corrections take precedence, including quoted whole-source edits.
 A persisted speech revision prevents deleted defaults from being reinserted on

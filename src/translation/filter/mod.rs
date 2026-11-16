@@ -13,22 +13,75 @@ use text::{is_emoji, is_japanese};
 pub struct Pipeline {
     pub dictionary: Dictionary,
     strip_engine_brackets: bool,
+    natural_text: bool,
+    memory: Option<crate::learning::Memory>,
 }
 impl Pipeline {
     pub fn new(dictionary: Dictionary) -> Self {
         Self {
             dictionary,
             strip_engine_brackets: false,
+            natural_text: false,
+            memory: None,
         }
     }
     pub fn legacy(dictionary: Dictionary) -> Self {
         Self {
             dictionary,
             strip_engine_brackets: true,
+            natural_text: false,
+            memory: None,
         }
     }
     pub fn translate(&self, engine: &mut dyn Translator, input: &str) -> Result<String> {
-        self.translate_inner(engine, input, 0)
+        let protected = self.dictionary.matcher.as_ref().is_some_and(|matcher| {
+            matcher.is_match(input) || matcher.is_match(&text::normalize_punctuation(input))
+        });
+        if !protected {
+            if let Some(corrected) = self
+                .memory
+                .as_ref()
+                .and_then(|memory| memory.resolve(input))
+            {
+                return Ok(corrected.into_owned());
+            }
+        }
+        let natural = self.natural_text && !protected;
+        let prepared = if natural {
+            super::prose::japanese::expand(input)
+        } else {
+            std::borrow::Cow::Borrowed(input)
+        };
+        let protected = protected
+            || self.dictionary.matcher.as_ref().is_some_and(|matcher| {
+                matcher.is_match(prepared.as_ref())
+                    || matcher.is_match(&text::normalize_punctuation(&prepared))
+            });
+        let translated = self.translate_inner(engine, &prepared, 0)?;
+        // Explicit dictionary choices retain their exact spelling and spacing.
+        // Normalize only after placeholders/brackets have been restored.
+        let translated = if natural && !protected {
+            super::prose::finish_lines(input, &translated)
+        } else {
+            translated
+        };
+        if !protected && !input.contains('\n') {
+            if let Some(memory) = &self.memory {
+                return memory.post_edit(input, &translated);
+            }
+        }
+        Ok(translated)
+    }
+    pub fn with_natural_text(mut self) -> Self {
+        self.natural_text = true;
+        self
+    }
+    /// Exact whole-utterance corrections precede inference; source-qualified
+    /// terms follow it. Explicit dictionary entries retain priority. Term edits
+    /// require a single source row rather than guessing a paragraph alignment.
+    pub fn with_memory(mut self, memory: crate::learning::Memory) -> Self {
+        self.memory = Some(memory);
+        self
     }
     fn translate_inner(
         &self,
@@ -53,16 +106,7 @@ impl Pipeline {
         let mut protected = Vec::<(String, String, bool)>::new();
         let mut work = String::with_capacity(input.len());
         // translator7 normalizes full-width punctuation before BracketFilter.
-        let normalized: String = input
-            .chars()
-            .map(|c| match c {
-                '～' => '~',
-                '（' => '(',
-                '）' => ')',
-                '？' => '?',
-                _ => c,
-            })
-            .collect();
+        let normalized = text::normalize_punctuation(input);
         let mut chars = normalized.char_indices().peekable();
         while let Some((_, c)) = chars.next() {
             match c {
