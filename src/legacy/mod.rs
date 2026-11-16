@@ -9,3 +9,4 @@ pub mod legacy_dat;
 pub mod morph;
 pub mod native;
 pub mod root_dll;
+pub mod rules;

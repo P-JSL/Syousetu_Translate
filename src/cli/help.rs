@@ -3,6 +3,7 @@ pub(super) fn print() {
         r#"Syousetu Translate (Rust)
   inspect --url URL [--html saved.html]
   inspect-dat --dir PATH [--out inspection.json]
+  inspect-rules --dir PATH [--out syntax-audit.json] (read-only; not a translation engine)
   inspect-root-dll --dll PATH [--out root-report.json]
   inspect-ehnd --dir PATH [--out ehnd-report.json]
   audit-ehnd-regex --dir PATH [--out audit.json] [--strict]

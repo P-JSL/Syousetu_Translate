@@ -25,6 +25,17 @@ pub(crate) fn inspect_dat(args: &[String]) -> Result<()> {
     Ok(())
 }
 #[cfg(feature = "legacy")]
+pub(crate) fn inspect_rules(args: &[String]) -> Result<()> {
+    let report = crate::legacy::rules::inspect(Path::new(&require(args, "--dir")?))?;
+    let json = serde_json::to_string_pretty(&report)?;
+    if let Some(path) = value(args, "--out") {
+        output::atomic_write(Path::new(&path), &json)?;
+    } else {
+        println!("{json}");
+    }
+    Ok(())
+}
+#[cfg(feature = "legacy")]
 pub(crate) fn inspect_root_dll(args: &[String]) -> Result<()> {
     let path = PathBuf::from(require(args, "--dll")?);
     let bytes =

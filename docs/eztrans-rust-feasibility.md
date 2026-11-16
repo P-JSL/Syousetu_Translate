@@ -10,6 +10,11 @@ Rust. A faithful replacement for the supplied ezTrans engine has not been
 implemented or established as a short route to the 90% speed target.**
 The existing Rust glossary engine is not such a replacement.
 
+The subsequent [Rust rule syntax reader](legacy-rule-syntax.md) now parses all
+6,086 fixed and 8,860 compact records in the supplied tables. Its evidence
+suggests Korean→Japanese literals, so these records are not applied to the
+Japanese→Korean neural model. Original rule semantics remain unverified.
+
 ## What the supplied archives establish
 
 The two source ZIPs contain Java clients, not the commercial engine source.

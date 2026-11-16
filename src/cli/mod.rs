@@ -51,6 +51,8 @@ pub fn run(args: &[String]) -> Result<()> {
         #[cfg(feature = "legacy")]
         Command::InspectDat => commands::legacy::inspect_dat(&args[2..]),
         #[cfg(feature = "legacy")]
+        Command::InspectRules => commands::legacy::inspect_rules(&args[2..]),
+        #[cfg(feature = "legacy")]
         Command::InspectRootDll => commands::legacy::inspect_root_dll(&args[2..]),
         #[cfg(feature = "legacy")]
         Command::InspectEhnd => commands::legacy::inspect_ehnd(&args[2..]),

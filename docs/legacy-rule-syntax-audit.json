@@ -1,0 +1,174 @@
+{
+  "transform": "candidate bytewise complement (xor 0xff)",
+  "container_layout_verified": true,
+  "all_nonempty_syntax_parsed": true,
+  "original_runtime_equivalence_verified": false,
+  "translation_semantics_verified": false,
+  "eligible_for_default_ja_ko": false,
+  "tables": [
+    {
+      "filename": "RuleKJ.Dat",
+      "bytes": 6232068,
+      "sha256": "0cca74d66e7a636565f21ccd5e84db7a711f1108916f83f7a91dbcd621050cea",
+      "records": 6086,
+      "parsed_records": 6086,
+      "failed_records": 0,
+      "predicates": 22339,
+      "field_references": {
+        "A-1": 2
+      },
+      "operators": {
+        "!=": 948,
+        "=": 3431,
+        "==": 17960
+      },
+      "literal_encodings_by_field": {
+        "A": {
+          "literals": 2153,
+          "ascii": 2153,
+          "valid_cp949": 2153,
+          "valid_shift_jis": 2153,
+          "valid_utf8": 2153
+        },
+        "D": {
+          "literals": 3948,
+          "ascii": 142,
+          "valid_cp949": 3722,
+          "valid_shift_jis": 3948,
+          "valid_utf8": 142
+        },
+        "G": {
+          "literals": 2268,
+          "ascii": 2268,
+          "valid_cp949": 2268,
+          "valid_shift_jis": 2268,
+          "valid_utf8": 2268
+        },
+        "M": {
+          "literals": 517,
+          "ascii": 517,
+          "valid_cp949": 517,
+          "valid_shift_jis": 517,
+          "valid_utf8": 517
+        },
+        "P": {
+          "literals": 5210,
+          "ascii": 5210,
+          "valid_cp949": 5210,
+          "valid_shift_jis": 5210,
+          "valid_utf8": 5210
+        },
+        "S": {
+          "literals": 19486,
+          "ascii": 243,
+          "valid_cp949": 19486,
+          "valid_shift_jis": 13612,
+          "valid_utf8": 441
+        },
+        "U": {
+          "literals": 462,
+          "ascii": 32,
+          "valid_cp949": 462,
+          "valid_shift_jis": 306,
+          "valid_utf8": 32
+        },
+        "Y": {
+          "literals": 574,
+          "ascii": 95,
+          "valid_cp949": 570,
+          "valid_shift_jis": 574,
+          "valid_utf8": 95
+        }
+      }
+    },
+    {
+      "filename": "CRuleKJ.Dat",
+      "bytes": 598219,
+      "sha256": "5bb9c5184846a4052a6c1fe9dd7124fdc7b6031195b329d187b427c6d5fe6cf8",
+      "records": 8860,
+      "parsed_records": 8860,
+      "failed_records": 0,
+      "predicates": 35583,
+      "field_references": {
+        "A-1": 2
+      },
+      "operators": {
+        "!=": 1390,
+        "=": 6042,
+        "==": 28151
+      },
+      "literal_encodings_by_field": {
+        "A": {
+          "literals": 3636,
+          "ascii": 3636,
+          "valid_cp949": 3636,
+          "valid_shift_jis": 3636,
+          "valid_utf8": 3636
+        },
+        "D": {
+          "literals": 6053,
+          "ascii": 203,
+          "valid_cp949": 5722,
+          "valid_shift_jis": 6053,
+          "valid_utf8": 203
+        },
+        "G": {
+          "literals": 2726,
+          "ascii": 2726,
+          "valid_cp949": 2726,
+          "valid_shift_jis": 2726,
+          "valid_utf8": 2726
+        },
+        "M": {
+          "literals": 1747,
+          "ascii": 1747,
+          "valid_cp949": 1747,
+          "valid_shift_jis": 1747,
+          "valid_utf8": 1747
+        },
+        "P": {
+          "literals": 7756,
+          "ascii": 7756,
+          "valid_cp949": 7756,
+          "valid_shift_jis": 7756,
+          "valid_utf8": 7756
+        },
+        "S": {
+          "literals": 30060,
+          "ascii": 277,
+          "valid_cp949": 30060,
+          "valid_shift_jis": 20648,
+          "valid_utf8": 619
+        },
+        "T": {
+          "literals": 2,
+          "ascii": 2,
+          "valid_cp949": 2,
+          "valid_shift_jis": 2,
+          "valid_utf8": 2
+        },
+        "U": {
+          "literals": 1907,
+          "ascii": 260,
+          "valid_cp949": 1907,
+          "valid_shift_jis": 1193,
+          "valid_utf8": 261
+        },
+        "W": {
+          "literals": 1,
+          "ascii": 1,
+          "valid_cp949": 1,
+          "valid_shift_jis": 1,
+          "valid_utf8": 1
+        },
+        "Y": {
+          "literals": 1496,
+          "ascii": 689,
+          "valid_cp949": 1492,
+          "valid_shift_jis": 1496,
+          "valid_utf8": 689
+        }
+      }
+    }
+  ]
+}

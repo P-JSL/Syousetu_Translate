@@ -193,7 +193,9 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "inspect-config" => values.push("--config"),
         "write-config" => values.extend(["--config", "--json", "--out"]),
         "inspect-root-dll" => values.extend(["--dll", "--out"]),
-        "inspect-dat" | "inspect-ehnd" | "audit-ehnd-control" => values.extend(["--dir", "--out"]),
+        "inspect-dat" | "inspect-rules" | "inspect-ehnd" | "audit-ehnd-control" => {
+            values.extend(["--dir", "--out"])
+        }
         "audit-ehnd-regex" => {
             values.extend(["--dir", "--out"]);
             flags.push("--strict");

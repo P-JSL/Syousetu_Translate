@@ -13,6 +13,8 @@ pub(super) enum Command {
     #[cfg(feature = "legacy")]
     InspectDat,
     #[cfg(feature = "legacy")]
+    InspectRules,
+    #[cfg(feature = "legacy")]
     InspectRootDll,
     #[cfg(feature = "legacy")]
     InspectEhnd,
@@ -38,6 +40,8 @@ impl std::str::FromStr for Command {
             "file" => Self::File,
             #[cfg(feature = "legacy")]
             "inspect-dat" => Self::InspectDat,
+            #[cfg(feature = "legacy")]
+            "inspect-rules" => Self::InspectRules,
             #[cfg(feature = "legacy")]
             "inspect-root-dll" => Self::InspectRootDll,
             #[cfg(feature = "legacy")]

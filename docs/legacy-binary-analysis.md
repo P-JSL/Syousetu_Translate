@@ -3,6 +3,11 @@
 Status: **verified container framing, not verified translation engine semantics**.
 Nothing from the proprietary binary payload is committed to this repository.
 
+The later [rule syntax reconstruction](legacy-rule-syntax.md) reads all 14,946
+records in the two rule tables using a candidate byte-complement transform.
+It establishes syntax and mixed-encoding boundaries, not a transfer VM or
+Japanese→Korean applicability. The original framing readers remain lossless.
+
 ## Inspection input
 
 The file sizes and hashes below were measured against the user's
