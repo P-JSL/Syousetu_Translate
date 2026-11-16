@@ -1,4 +1,5 @@
 {
+  "candidate_source_commit": "834044689f637ce65e5c655fbce21dbbf1ff92ab",
   "baseline_binary_sha256": "f4369004459c9508fd6a42b228d51a9029e59ec57ef6e7ef79f8ea83f878d6ab",
   "candidate_binary_sha256": "8b6297d1b8f78a0b1a643ca02fca783447e982c0b8fba06ee5c6df26c364943a",
   "cases": [

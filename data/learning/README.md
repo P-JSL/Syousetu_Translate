@@ -18,13 +18,16 @@ Resource scope and importer exclusions: [resource audit](../../docs/resource-aud
 
 `ja-ko-speech.tsv` supplies the original 112 independently authored spoken
 utterances (1,425 compressed bytes). `ja-ko-speech-v2.tsv` adds 180 more
-(4,194 compressed bytes): reassurance, apology, requests, prohibition,
+(4,211 compressed bytes): reassurance, apology, requests, prohibition,
 permission, hesitation, emotion, monologue and explicit formal address.
 Generate both assets with `cargo run --locked --example pack_speech`.
 Revision 2 adds only its new entries; it does not reinstall deleted revision-1
 entries or overwrite existing user sentences/terms. Deletions made after the
 upgrade also remain deleted. This is 292 authored speech entries in two sets,
 not 292 additional training samples or a model-quality score.
+New revision-2 sources are disjoint from the original sentence defaults,
+the 1,058 headwords and revision 1; old deletions cannot be restored through
+a duplicate entry in a newer set.
 
 Quoted/periodless whole-utterance aliases do not authorize substring replacement
 inside other sentences. The 128 model-review sentences are excluded from these

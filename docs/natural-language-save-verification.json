@@ -1,5 +1,6 @@
 {
   "review_date_kst": "2026-11-16",
+  "candidate_source_commit": "834044689f637ce65e5c655fbce21dbbf1ff92ab",
   "candidate_binary_sha256": "8b6297d1b8f78a0b1a643ca02fca783447e982c0b8fba06ee5c6df26c364943a",
   "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
   "host": {

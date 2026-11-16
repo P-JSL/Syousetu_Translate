@@ -139,6 +139,42 @@ mod tests {
         assert!(migrated.lookup("無事でよかった。").is_some());
     }
     #[test]
+    fn second_revision_does_not_resurrect_deleted_original_defaults() {
+        let mut old = Memory::bundled().unwrap();
+        old.speech_revision = 1;
+        for source in entries(2).unwrap().keys() {
+            old.sentences.remove(source);
+        }
+        let deleted = [
+            "どういたしまして。",
+            "お待たせしました。",
+            "急がなくても大丈夫です。",
+        ];
+        for source in deleted {
+            old.sentences.remove(source);
+        }
+        let migrated = super::super::bootstrap::merge(old).unwrap();
+        for source in deleted {
+            assert!(
+                migrated.lookup(source).is_none(),
+                "restored deleted default: {source}"
+            );
+        }
+    }
+    #[test]
+    fn new_speech_sources_are_disjoint_from_older_defaults_and_headwords() {
+        let original: Memory =
+            serde_json::from_str(include_str!("../../data/learning/ja-ko-natural.json")).unwrap();
+        let headwords = super::super::core_dictionary::entries().unwrap();
+        assert_eq!(entries(2).unwrap().len(), 180);
+        for source in entries(2).unwrap().keys() {
+            assert!(
+                !original.sentences.contains_key(source) && !headwords.contains_key(source),
+                "old default repeated in migration: {source}"
+            );
+        }
+    }
+    #[test]
     fn compressed_speech_entries_match_the_reviewable_source() {
         for (revision, source) in [
             (1, include_str!("../../data/learning/ja-ko-speech.tsv")),
