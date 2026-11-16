@@ -26,6 +26,7 @@ pub struct Config {
     pub download_dir: Option<String>,
     pub learning_path: Option<String>,
     pub learning_enabled: bool,
+    pub reuse_translations: bool,
     pub parallel_mode: String,
     pub ca_bundle: Option<String>,
     pub user_agent: String,
@@ -52,6 +53,7 @@ impl Default for Config {
             download_dir: None,
             learning_path: None,
             learning_enabled: true,
+            reuse_translations: true,
             parallel_mode: "auto".into(),
             ca_bundle: None,
             user_agent: "SyousetuTranslateRust/0.3 (personal web novel reader)".into(),
@@ -136,6 +138,7 @@ impl Config {
                 "include_comment" => cfg.include_comment = boolean()?,
                 "save_without_file_chooser" => cfg.save_without_file_chooser = boolean()?,
                 "learning_enabled" => cfg.learning_enabled = boolean()?,
+                "reuse_translations" => cfg.reuse_translations = boolean()?,
                 // Read old profiles without restoring the retired approximate mode.
                 "fast_vocabulary" => {
                     boolean()?;
@@ -253,6 +256,7 @@ impl Config {
                 self.learning_path.clone().unwrap_or_default(),
             ),
             ("learning_enabled", self.learning_enabled.to_string()),
+            ("reuse_translations", self.reuse_translations.to_string()),
             ("parallel_mode", self.parallel_mode.clone()),
             ("ca_bundle", self.ca_bundle.clone().unwrap_or_default()),
             (

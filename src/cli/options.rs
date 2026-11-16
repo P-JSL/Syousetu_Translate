@@ -81,6 +81,15 @@ pub fn settings(args: &[String]) -> Result<Config> {
     if flag(args, "--no-learning") {
         cfg.learning_enabled = false;
     }
+    if flag(args, "--reuse-results") && flag(args, "--no-result-cache") {
+        bail!("--reuse-results와 --no-result-cache는 함께 사용할 수 없습니다");
+    }
+    if flag(args, "--reuse-results") {
+        cfg.reuse_translations = true;
+    }
+    if flag(args, "--no-result-cache") {
+        cfg.reuse_translations = false;
+    }
     if let Some(mode) = value(args, "--parallel-mode") {
         if !matches!(mode.as_str(), "auto" | "serial" | "parallel") {
             bail!("--parallel-mode: auto|serial|parallel이어야 합니다");
@@ -100,6 +109,7 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--jobs",
         "--model-dir",
         "--memory-path",
+        "--result-cache-dir",
         "--parallel-mode",
         "--ca-bundle",
     ];
@@ -115,6 +125,8 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--ehnd-literal-only",
         "--progress-json",
         "--no-learning",
+        "--reuse-results",
+        "--no-result-cache",
     ];
     let download_values = [
         "--url",

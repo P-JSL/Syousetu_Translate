@@ -23,6 +23,7 @@ pub struct TranslatorBuilder {
     budget: CpuBudget,
     policy: ParallelPolicy,
     workers: usize,
+    result_cache: Option<PathBuf>,
 }
 impl TranslatorBuilder {
     pub(super) fn new(root: &Path) -> Self {
@@ -36,6 +37,7 @@ impl TranslatorBuilder {
             ),
             policy: ParallelPolicy::Auto,
             workers: 32,
+            result_cache: None,
         }
     }
     pub fn memory(mut self, memory: Memory) -> Self {
@@ -54,11 +56,24 @@ impl TranslatorBuilder {
         self.workers = workers.clamp(1, 256);
         self
     }
+    /// Reuse completed results across runs of the same verified program,
+    /// model, correction snapshot and inference policy. Off by default in the library.
+    pub fn translation_cache(mut self, directory: impl AsRef<Path>) -> Self {
+        self.result_cache = Some(directory.as_ref().to_owned());
+        self
+    }
     pub fn build(self) -> Result<OfflineTranslator> {
         let memory = match self.memory {
             Some(memory) => memory,
             None => Memory::bundled()?,
         };
-        OfflineTranslator::load(&self.root, memory, self.budget, self.policy, self.workers)
+        OfflineTranslator::load(
+            &self.root,
+            memory,
+            self.budget,
+            self.policy,
+            self.workers,
+            self.result_cache.as_deref(),
+        )
     }
 }

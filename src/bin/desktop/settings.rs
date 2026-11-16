@@ -62,6 +62,13 @@ impl Desktop {
         );
         ui.label("Windows의 신뢰된 인증서를 기본 사용합니다. 사내망·보안 프로그램의 추가 CA만 지정해 주세요.");
         ui.checkbox(&mut self.config.learning_enabled, "교정 기억 적용");
+        ui.checkbox(
+            &mut self.config.reuse_translations,
+            "저장된 번역 결과 재사용",
+        )
+        .on_hover_text(
+            "같은 내용의 재번역을 빠르게 처리합니다. 모델이나 교정 내용을 바꾸면 새로 번역합니다.",
+        );
         egui::ComboBox::from_label("본문 처리 방식")
             .selected_text(&self.config.parallel_mode)
             .show_ui(ui, |ui| {

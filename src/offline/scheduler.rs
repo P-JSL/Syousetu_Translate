@@ -8,7 +8,9 @@ impl OfflineTranslator {
         }
         let candidates = lines
             .iter()
-            .filter(|s| japanese(s) && !self.runners[0].has_correction(s))
+            .filter(|s| {
+                japanese(s) && !self.runners[0].has_correction(s) && !self.cache.contains(s)
+            })
             .collect::<Vec<_>>();
         if candidates.len() < 16 {
             return Ok(false);

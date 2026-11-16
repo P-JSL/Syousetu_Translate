@@ -89,18 +89,31 @@ pub(super) fn engine_from_args(
             } else {
                 crate::learning::Memory::default()
             };
+            let builder = crate::offline::OfflineTranslator::builder(&config.model_directory())
+                .memory(memory)
+                .workers(config.workers())
+                .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
+                .parallel_policy(config.parallel_mode.parse()?);
+            let reuse = config.reuse_translations
+                && (!flag(args, "--no-learning") || flag(args, "--reuse-results"));
+            let builder = if reuse {
+                let directory = value(args, "--result-cache-dir")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| crate::models::data_dir().join("translation-cache"));
+                builder.translation_cache(directory)
+            } else {
+                builder
+            };
             return Ok(Box::new(Internal {
-                engine: crate::offline::OfflineTranslator::builder(&config.model_directory())
-                    .memory(memory)
-                    .workers(config.workers())
-                    .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
-                    .parallel_policy(config.parallel_mode.parse()?)
-                    .build()?,
+                engine: builder.build()?,
                 progress: flag(args, "--progress-json"),
             }));
         }
         #[cfg(not(feature = "offline-model"))]
         bail!("이 실행 파일에는 내부 모델 기능이 없습니다. 64비트 기본 빌드를 사용해 주세요");
+    }
+    if flag(args, "--reuse-results") || value(args, "--result-cache-dir").is_some() {
+        bail!("번역 결과 재사용 옵션은 --engine internal에서 지원합니다");
     }
     let dll_path = value(args, "--eztrans-dir")
         .or_else(|| config.eztrans_path.clone())

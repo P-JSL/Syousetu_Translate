@@ -12,6 +12,7 @@ mod selection;
 mod text;
 mod tokenizer;
 pub use builder::{CpuBudget, TranslatorBuilder};
+pub use cache::CacheStats;
 pub use policy::ParallelPolicy;
 use runner::Runner;
 use std::sync::Arc;

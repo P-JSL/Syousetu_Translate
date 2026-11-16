@@ -29,6 +29,7 @@ impl OfflineTranslator {
         budget: super::CpuBudget,
         policy: ParallelPolicy,
         workers: usize,
+        result_cache: Option<&Path>,
     ) -> Result<Self> {
         if usize::BITS < 64 {
             bail!("내부 모델은 64비트 실행 파일이 필요합니다");
@@ -56,6 +57,17 @@ impl OfflineTranslator {
                 crate::int8::Weights::open(&directory)?,
             )?)
         })?;
+        let cache = result_cache
+            .and_then(|directory| {
+                match super::cache::Cache::persistent(directory, &memory, policy, count, budget) {
+                    Ok(cache) => Some(cache),
+                    Err(error) => {
+                        eprintln!("이전 번역 결과를 사용할 수 없어 새로 번역합니다: {error:#}");
+                        None
+                    }
+                }
+            })
+            .unwrap_or_default();
         let memory = Arc::new(memory);
         let mut runners = Vec::new();
         // Logical contexts share a single bounded compute pool. More contexts
@@ -73,7 +85,7 @@ impl OfflineTranslator {
         Ok(Self {
             runners,
             compute_pool: Arc::clone(&load_pool),
-            cache: super::cache::Cache::default(),
+            cache,
             single_pool: if budget == 1 {
                 load_pool
             } else {
@@ -104,5 +116,11 @@ impl OfflineTranslator {
     }
     pub fn translate_lines(&mut self, lines: &[String]) -> Result<Vec<String>> {
         self.translate_lines_with_progress(lines, |_, _| {})
+    }
+    pub fn result_cache_stats(&self) -> super::CacheStats {
+        self.cache.stats()
+    }
+    pub fn flush_result_cache(&mut self) -> Result<()> {
+        self.cache.flush()
     }
 }

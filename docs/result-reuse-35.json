@@ -1,0 +1,138 @@
+{
+  "all_full_work_structural_checks_passed": true,
+  "all_outputs_byte_identical": true,
+  "cached_source_html": true,
+  "chapters": 35,
+  "cli_sha256": "bfa021f570e999badefe8e0a9a61189f033aeea7beae98f824ba686c681f7562",
+  "correction_memory": false,
+  "first_translation_90_percent_met": false,
+  "first_translation_95_percent_met": false,
+  "fresh_median_seconds": 52.849399589,
+  "fresh_result_stores": [
+    {
+      "kind": "fresh-store-1",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 0회 / 미적중 3352회 · 이전 결과 0개",
+      "seconds": 52.849399589,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "kind": "fresh-store-2",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 0회 / 미적중 3352회 · 이전 결과 0개",
+      "seconds": 56.362878253,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "kind": "fresh-store-3",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 0회 / 미적중 3352회 · 이전 결과 0개",
+      "seconds": 51.528068104,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    }
+  ],
+  "logical_contexts": 128,
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "new_process_per_sample": true,
+  "original_reference_seconds": 163.110703742,
+  "os_file_cache_cleared": false,
+  "parallel_policy": "parallel",
+  "retranslation_reduction_percent": 98.69182775513707,
+  "reused_median_seconds": 0.691361177,
+  "reused_result_claim_applies_to_first_translation": false,
+  "reused_result_stores": [
+    {
+      "kind": "reused-store-1",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 3352회 / 미적중 0회 · 이전 결과 3276개",
+      "seconds": 0.620082586,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "kind": "reused-store-2",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 3352회 / 미적중 0회 · 이전 결과 3276개",
+      "seconds": 0.807173549,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "kind": "reused-store-3",
+      "result_reuse_status": "번역 결과 재사용 · 조회 적중 3352회 / 미적중 0회 · 이전 결과 3276개",
+      "seconds": 0.691361177,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    }
+  ],
+  "semantic_accuracy_certified": false,
+  "url": "https://kakuyomu.jp/works/11054822663814504924",
+  "without_disk_reuse": {
+    "kind": "without-disk-reuse",
+    "result_reuse_status": null,
+    "seconds": 59.812375717,
+    "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+    "verification": {
+      "bytes": 607026,
+      "chapters": 35,
+      "complete": true,
+      "korean_lines": 3297,
+      "nonempty_source_lines": 3354,
+      "semantic_accuracy_certified": false,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "source_lines": 6248
+    }
+  }
+}
