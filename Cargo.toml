@@ -28,6 +28,10 @@ name = "benchmark_projection"
 required-features = ["offline-model"]
 
 [[example]]
+name = "benchmark_q8_pairs"
+required-features = ["offline-model"]
+
+[[example]]
 name = "convert_int8"
 required-features = ["model-tools"]
 

@@ -1,0 +1,74 @@
+{
+  "recorded_date": "2026-11-17",
+  "time_zone": "Asia/Seoul",
+  "model": "SMaLL-100 INT8",
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "source_parent_commit": "d3727c464ef7c318bb5333f2f0cf90c11e231625",
+  "control_commit": "6d73310da566d95b549bc6b46733529c59c92da6",
+  "cpu": "AMD EPYC 9V45",
+  "cpu_quota": 4,
+  "gpu_available": false,
+  "mode": "MISTRALRS_FORCE_AVX2=1 forces the Q8 fallback on a VNNI-capable host; other CPU kernels keep their normal dispatch",
+  "logical_contexts": 128,
+  "parallel_policy": "parallel",
+  "candle_num_threads": 1,
+  "cached_source_html": true,
+  "network_time_excluded": true,
+  "os_file_cache_cleared": false,
+  "learned_memory": false,
+  "disk_result_reuse": false,
+  "new_process_per_sample": true,
+  "completed_control_runs": 1,
+  "completed_final_candidate_runs": 1,
+  "intermediate_candidate": "The earlier two-row prototype was cancelled at startup after the control was saved; it provides no whole-work timing sample.",
+  "control_executable_sha256": "829607aaca75e2bb646cf6af907d0f2a8974f6137cc7e9f1cc3b65f4fa38a817",
+  "candidate_executable_sha256": "8567dfd383b9e0106933b5948564532fe8a009f55a0924bee5f577d2d8b75a97",
+  "source_files_sha256": {
+    "vendor/candle-core/src/quantized/avx.rs": "19e7c53fd278c1b02cd246b0b32368386f2a2b08ccc23638ac2622673fa08ca3",
+    "vendor/candle-core/src/quantized/k_quants.rs": "3a37e10570d063accfa116f81840301aec46445326b89b8c9ac3b966250170bb"
+  },
+  "control": {
+    "seconds": 831.972988461,
+    "sampled_peak_rss_kib": 882308
+  },
+  "candidate": {
+    "seconds": 287.158602205,
+    "sampled_peak_rss_kib": 860336
+  },
+  "time_reduction_percent": 65.48462435827493,
+  "memory_change_mib": -21.45703125,
+  "memory_change_percent": -2.4902868386096455,
+  "memory_sampling_interval_ms": 10,
+  "memory_allowance": {
+    "additional_mib": 512,
+    "additional_percent": 25,
+    "validation_only": true
+  },
+  "memory_increase_within_review_limits": true,
+  "first_translation_85_percent_faster_than_control": false,
+  "first_translation_90_percent_faster_than_control": false,
+  "first_translation_95_percent_faster_than_control": false,
+  "verification": {
+    "chapters": 35,
+    "source_lines": 6248,
+    "nonempty_source_lines": 3354,
+    "korean_lines": 3297,
+    "bytes": 607849,
+    "complete": true,
+    "byte_identical": true,
+    "sha256": "6423d3669c60b67d5d7907f9d04c11631a4d8d2331973e5b31f830a673d07a0a",
+    "semantic_accuracy_certified": false
+  },
+  "native_24_validation": {
+    "chapters": 24,
+    "source_lines": 17041,
+    "bytes": 937029,
+    "complete": true,
+    "byte_identical_to_saved_control": true,
+    "sha256": "095a4045e8430fcd844656235002212550582173cd753bec7779a5a8579c1992",
+    "new_control_runs": 0,
+    "candidate_runs": 1,
+    "speed_comparison": false
+  },
+  "interpretation": "One completed pair, not a median or multiple-PC average. No concurrent CPU builds/model tests. Unchanged INT8 quantization, original per-lane block FMA order and complete vocabulary. No result-reuse speedup, no pruning and no claimed 85–95% achievement."
+}

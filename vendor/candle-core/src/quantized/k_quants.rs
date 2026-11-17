@@ -79,6 +79,33 @@ pub trait GgmlType: Sized + Clone + Send + Sync {
         (d0, d1, d2, d3)
     }
 
+    /// Decode exact input scales once per matrix call when a kernel needs them.
+    fn fill_input_scales(_inputs: &[Self::VecDotType], output: &mut Vec<f32>) {
+        output.clear();
+    }
+
+    /// Up to sixteen independent inputs against the same four weight rows.
+    /// Implementations must preserve each original dot product's arithmetic.
+    fn vec_dot_4_rows(
+        n: usize,
+        weights: [&[Self]; 4],
+        inputs: &[Self::VecDotType],
+        _input_scales: &[f32],
+        rows: usize,
+    ) -> [[f32; 4]; 16] {
+        assert!(rows <= 16);
+        let blocks = n.div_ceil(Self::VecDotType::BLCK_SIZE);
+        let mut result = [[0.;4];16];
+        for (row, result) in result.iter_mut().take(rows).enumerate() {
+            let input = &inputs[row*blocks..(row+1)*blocks];
+            let (a, b, c, d) = Self::vec_dot_4(
+                n, weights[0], weights[1], weights[2], weights[3], input,
+            );
+            *result = [a, b, c, d];
+        }
+        result
+    }
+
     /// Generic implementation of the dot product without simd optimizations.
     fn vec_dot_unopt(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32;
 }
@@ -714,6 +741,44 @@ impl GgmlType for BlockQ8_0 {
         let (d0, d1) = Self::vec_dot_2(n, xs0, xs1, ys);
         let (d2, d3) = Self::vec_dot_2(n, xs2, xs3, ys);
         (d0, d1, d2, d3)
+    }
+
+    fn fill_input_scales(inputs: &[Self::VecDotType], output: &mut Vec<f32>) {
+        output.resize(inputs.len(), 0.);
+        if inputs.len() >= 16384 && rayon::current_num_threads() > 1 {
+            use rayon::prelude::*;
+            output.par_iter_mut().zip(inputs.par_iter())
+                .for_each(|(out,input)| *out = input.d.to_f32());
+        } else {
+            for (out,input) in output.iter_mut().zip(inputs) { *out = input.d.to_f32(); }
+        }
+    }
+
+    fn vec_dot_4_rows(
+        n: usize,
+        weights: [&[Self]; 4],
+        inputs: &[Self::VecDotType],
+        input_scales: &[f32],
+        rows: usize,
+    ) -> [[f32; 4]; 16] {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if has_avx2_fma() {
+            // SAFETY: this feature check gates every AVX2/FMA instruction;
+            // the kernel checks all block lengths before loading bytes.
+            return unsafe { super::avx::vec_dot_4_rows_q8_0(n, weights, inputs, input_scales, rows) };
+        }
+        let _ = input_scales;
+        assert!(rows <= 16);
+        let blocks = n/QK8_0;
+        let mut result = [[0.;4];16];
+        for (row,result) in result.iter_mut().take(rows).enumerate() {
+            let input = &inputs[row*blocks..(row+1)*blocks];
+            let (a, b, c, d) = Self::vec_dot_4(
+                n, weights[0], weights[1], weights[2], weights[3], input,
+            );
+            *result = [a, b, c, d];
+        }
+        result
     }
 
     fn vec_dot_unopt(n: usize, xs: &[Self], ys: &[Self::VecDotType]) -> f32 {
@@ -2450,17 +2515,24 @@ pub fn matmul<T: GgmlType>(
     // Thread-local scratch buffer reused across calls to avoid per-matmul
     // heap allocation of the quantized LHS.
     // Using u64 ensures sufficient alignment regardless of `T::VecDotType`.
+    #[derive(Default)]
+    struct MatmulScratch { quants: Vec<u64>, scales: Vec<f32> }
     thread_local! {
-        static LHS_SCRATCH: std::cell::RefCell<Vec<u64>> =
-            const { std::cell::RefCell::new(Vec::new()) };
+        static LHS_SCRATCH: std::cell::RefCell<MatmulScratch> =
+            std::cell::RefCell::new(MatmulScratch::default());
     }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let shared_q8 = T::DTYPE == GgmlDType::Q8_0 && has_avx2_fma() && m > 1 && n >= 4;
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    let shared_q8 = false;
 
     let elem_size = std::mem::size_of::<T::VecDotType>();
     // Required scratch buffer length in u64
     let required_scratch_len = (m * k_in_blocks * elem_size).div_ceil(8);
 
     LHS_SCRATCH.with(|cell| -> Result<()> {
-        let mut scratch = cell.borrow_mut();
+        let mut buffers = cell.borrow_mut();
+        let MatmulScratch {quants: scratch, scales} = &mut *buffers;
         if scratch.len() < required_scratch_len {
             scratch.resize(required_scratch_len, 0);
         }
@@ -2490,6 +2562,7 @@ pub fn matmul<T: GgmlType>(
                 T::VecDotType::from_float(lhs, lhs_b_mut)
             }
         }
+        if shared_q8 { T::fill_input_scales(lhs_b, scales); }
         let n_quad = n & !3;
         let quads_total = n_quad / 4;
         let n_tail = n - n_quad; // 0..=3
@@ -2516,6 +2589,22 @@ pub fn matmul<T: GgmlType>(
                 *base.add(1) = d1;
                 *base.add(2) = d2;
                 *base.add(3) = d3;
+            }
+        };
+        let dot_quad_rows = |row_start: usize, row_end: usize, col: usize| {
+            let weights = std::array::from_fn(|offset| {
+                &rhs_t[(col + offset) * k_in_blocks..(col + offset + 1) * k_in_blocks]
+            });
+            let scores = T::vec_dot_4_rows(k, weights,
+                &lhs_b[row_start*k_in_blocks..row_end*k_in_blocks],
+                &scales[row_start*k_in_blocks..row_end*k_in_blocks],row_end-row_start);
+            for (offset, values) in scores.into_iter().take(row_end-row_start).enumerate() {
+                // SAFETY: rows stay within the checked, disjoint scheduling
+                // tile; each four-value result stays within its column quad.
+                unsafe {
+                    let base = (dst_ptr as *mut f32).add((row_start + offset) * n + col);
+                    std::ptr::copy_nonoverlapping(values.as_ptr(), base, 4);
+                }
             }
         };
         // The 0..=3 columns left over after the quads.
@@ -2574,8 +2663,12 @@ pub fn matmul<T: GgmlType>(
                 let row_start = (item / quads_total) * MATMUL_ROW_TILE;
                 let row_end = m.min(row_start + MATMUL_ROW_TILE);
                 let col = (item % quads_total) * 4;
-                for row_idx in row_start..row_end {
-                    dot_quad(row_idx, col)
+                if shared_q8 {
+                    dot_quad_rows(row_start,row_end,col);
+                } else {
+                    for row_idx in row_start..row_end {
+                        dot_quad(row_idx, col)
+                    }
                 }
             }
         });

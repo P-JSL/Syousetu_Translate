@@ -88,6 +88,88 @@ pub(crate) fn vec_dot_q8_0_q8_0(n: usize, xs: &[BlockQ8_0], ys: &[BlockQ8_0]) ->
     }
 }
 
+/// Caller provides checked block slices and exact decoded scales. Each lane
+/// retains the original block FMA order and horizontal reduction.
+///
+/// # Safety
+/// AVX2/FMA must be available. All rows contain n/32 blocks, weight_scales
+/// contains 4*n/32 values, and both input-scale rows contain n/32 values.
+#[target_feature(enable = "avx2,fma")]
+unsafe fn vec_dot_2x4_q8_0(
+    n: usize,
+    weights: [&[BlockQ8_0]; 4],
+    inputs: [&[BlockQ8_0]; 2],
+    weight_scales: &[f32],
+    input_scales: [&[f32]; 2],
+) -> [[f32; 4]; 2] {
+    let blocks = n / QK8_0;
+    let mut acc = [[_mm256_setzero_ps(); 4]; 2];
+    for block in 0..blocks {
+        let a0 = _mm256_loadu_si256(inputs[0][block].qs.as_ptr().cast());
+        let a1 = _mm256_loadu_si256(inputs[1][block].qs.as_ptr().cast());
+        let da0 = input_scales[0][block];
+        let da1 = input_scales[1][block];
+        for column in 0..4 {
+            let weight = &weights[column][block];
+            let w = _mm256_loadu_si256(weight.qs.as_ptr().cast());
+            let absolute = _mm256_sign_epi8(w, w);
+            let dw = weight_scales[block * 4 + column];
+            let q0 = mul_sum_us8_pairs_float(absolute, _mm256_sign_epi8(a0, w));
+            let q1 = mul_sum_us8_pairs_float(absolute, _mm256_sign_epi8(a1, w));
+            acc[0][column] = _mm256_fmadd_ps(_mm256_set1_ps(dw * da0), q0, acc[0][column]);
+            acc[1][column] = _mm256_fmadd_ps(_mm256_set1_ps(dw * da1), q1, acc[1][column]);
+        }
+    }
+    acc.map(|row| row.map(|value| hsum_float_8(value)))
+}
+
+/// Decode each weight scale once per existing sixteen-row scheduling tile.
+/// The input scales are decoded once per matrix call. No quantization or
+/// floating-point reduction is changed; scratch is private to each CPU thread.
+///
+/// # Safety
+/// The caller must check AVX2/FMA support. Slice lengths are checked here.
+#[target_feature(enable = "avx2,fma")]
+pub(crate) unsafe fn vec_dot_4_rows_q8_0(
+    n: usize,
+    weights: [&[BlockQ8_0]; 4],
+    inputs: &[BlockQ8_0],
+    input_scales: &[f32],
+    rows: usize,
+) -> [[f32; 4]; 16] {
+    assert!(n.is_multiple_of(QK8_0) && rows <= 16);
+    let blocks = n / QK8_0;
+    assert!(weights.iter().all(|row| row.len() >= blocks));
+    assert!(inputs.len() >= rows * blocks && input_scales.len() >= rows * blocks);
+    thread_local! {
+        static SCALES: std::cell::RefCell<Vec<f32>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    SCALES.with(|cell| {
+        let mut scales = cell.borrow_mut();
+        scales.resize(4 * blocks, 0.);
+        for block in 0..blocks {
+            for column in 0..4 {
+                scales[block * 4 + column] = weights[column][block].d.to_f32();
+            }
+        }
+        let mut result = [[0.; 4]; 16];
+        for row in (0..rows / 2 * 2).step_by(2) {
+            let values = vec_dot_2x4_q8_0(n, weights,
+                [&inputs[row*blocks..(row+1)*blocks], &inputs[(row+1)*blocks..(row+2)*blocks]],
+                &scales,
+                [&input_scales[row*blocks..(row+1)*blocks], &input_scales[(row+1)*blocks..(row+2)*blocks]]);
+            result[row] = values[0];
+            result[row+1] = values[1];
+        }
+        if rows % 2 != 0 {
+            let row = rows-1;
+            let input = &inputs[row*blocks..(row+1)*blocks];
+            result[row] = weights.map(|weight|vec_dot_q8_0_q8_0(n,weight,input));
+        }
+        result
+    })
+}
+
 /// # Safety
 /// `i` must be less than 8.
 #[target_feature(enable = "avx2,fma")]
