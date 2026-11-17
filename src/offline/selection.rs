@@ -2,6 +2,7 @@
 use anyhow::{Context, Result};
 use candle_core::{CpuStorage, Storage, Tensor};
 use std::collections::HashSet;
+pub(super) mod gpu;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[allow(unsafe_code)]
 mod simd;
@@ -13,6 +14,17 @@ pub(super) fn select_logits(
     blocked: &HashSet<u32>,
 ) -> Result<u32> {
     anyhow::ensure!(scores.rank() == 1, "출력 점수는 1차원이어야 합니다");
+    if !scores.device().is_cpu() {
+        return gpu::select_rows(
+            &scores.unsqueeze(0)?,
+            vocab,
+            eos,
+            std::slice::from_ref(blocked),
+        )?
+        .into_iter()
+        .next()
+        .context("모델이 유효한 출력 토큰을 생성하지 못했습니다");
+    }
     let (storage, layout) = scores.storage_and_layout();
     let Storage::Cpu(CpuStorage::F32(values)) = &*storage else {
         anyhow::bail!("출력 점수는 CPU F32여야 합니다");

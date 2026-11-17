@@ -1,0 +1,61 @@
+name: Build optional NVIDIA CUDA overlay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-overlay-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  CUDA_COMPUTE_CAP: '89'
+
+jobs:
+  windows-cuda:
+    # A compile/package job only. Hosted Windows runners have no NVIDIA GPU.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and compile the Rust-only CUDA package planner
+        run: |
+          rustc --edition=2021 --test tools/cuda_package.rs -o cuda-package-tests.exe
+          ./cuda-package-tests.exe
+          rustc --edition=2021 tools/cuda_package.rs -o cuda-package.exe
+      - name: Install only CUDA compiler and used library components
+        id: cuda
+        # Jimver/cuda-toolkit v0.2.36; Node.js 24, fixed reviewed source.
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d
+        with:
+          cuda: '12.8.1'
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "curand", "curand_dev", "nvrtc", "nvrtc_dev"]'
+          use-github-cache: false
+      - name: Select a CUDA 12.8 compatible host compiler
+        run: ./cuda-package.exe host-compiler
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cuda128-sm89-windows
+          cache-on-failure: true
+      - name: Compile CUDA GUI and CLI (no inference on hosted runner)
+        run: cargo build --locked --release --features gui,cuda --bins --target x86_64-pc-windows-msvc
+      - name: Stage import-required CUDA libraries and licenses only
+        shell: pwsh
+        env:
+          CUDA_TOOLKIT: ${{ steps.cuda.outputs.CUDA_PATH }}
+        run: ./cuda-package.exe target/x86_64-pc-windows-msvc/release "$env:CUDA_TOOLKIT" dist/cuda-overlay
+      - uses: actions/upload-artifact@v6
+        with:
+          name: SyousetuTranslate-CUDA-Windows-x64-${{ github.sha }}
+          path: dist/cuda-overlay/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14

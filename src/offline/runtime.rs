@@ -2,7 +2,9 @@ use crate::{learning::Memory, models};
 use anyhow::{bail, Result};
 use std::{fs, path::Path, sync::Arc};
 
-use super::{model, runner::Runner, tokenizer::Tokenizer, OfflineTranslator, ParallelPolicy};
+use super::{
+    model, runner::Runner, tokenizer::Tokenizer, InferenceDevice, OfflineTranslator, ParallelPolicy,
+};
 impl OfflineTranslator {
     pub fn builder(root: &Path) -> super::TranslatorBuilder {
         super::TranslatorBuilder::new(root)
@@ -30,6 +32,7 @@ impl OfflineTranslator {
         policy: ParallelPolicy,
         workers: usize,
         result_cache: Option<&Path>,
+        device_request: (InferenceDevice, usize),
     ) -> Result<Self> {
         if usize::BITS < 64 {
             bail!("내부 모델은 64비트 실행 파일이 필요합니다");
@@ -51,13 +54,45 @@ impl OfflineTranslator {
                 .build()?,
         );
         eprintln!("직접 일→한 INT8 모델 로딩 중...");
-        let model = load_pool.install(|| -> Result<_> {
-            Ok(model::Model::new(
-                &config,
-                crate::int8::Weights::open(&directory)?,
-            )?)
-        })?;
+        let mut device = device_request.0.resolve(device_request.1)?;
+        let prepare = |device: &candle_core::Device| -> Result<_> {
+            load_pool.install(|| {
+                let model = model::Model::new(
+                    &config,
+                    crate::int8::Weights::open_on_device(&directory, device)?,
+                )?;
+                if !device.is_cpu() {
+                    // Exercise cuBLAS and synchronize allocations before output starts.
+                    use candle_core::{DType, Tensor};
+                    let probe = Tensor::ones((2, 16), DType::F16, device)?;
+                    let _ = probe.matmul(&probe.t()?)?.to_dtype(DType::F32)?;
+                    device.synchronize()?;
+                }
+                Ok(model)
+            })
+        };
+        let model = match prepare(&device) {
+            Ok(model) => model,
+            Err(error) if !device.is_cpu() && device_request.0 == InferenceDevice::Auto => {
+                eprintln!("GPU 모델 준비 실패로 CPU에서 시작합니다: {error:#}");
+                device = candle_core::Device::Cpu;
+                prepare(&device)?
+            }
+            Err(error) => return Err(error),
+        };
+        if !device.is_cpu() {
+            eprintln!(
+                "CUDA GPU {} · SMaLL-100 INT8 파일 / FP16 행렬 · F32 정규화·attention",
+                device_request.1
+            );
+            if result_cache.is_some() {
+                // CPU and GPU use different arithmetic. Never restore a CPU
+                // result as a GPU result or mix different GPU/driver versions.
+                eprintln!("GPU 경로는 디스크 번역 결과를 재사용하지 않습니다");
+            }
+        }
         let cache = result_cache
+            .filter(|_| device.is_cpu())
             .and_then(|directory| {
                 match super::cache::Cache::persistent(directory, &memory, policy, count, budget) {
                     Ok(cache) => Some(cache),
@@ -93,7 +128,7 @@ impl OfflineTranslator {
             },
             parallel: if count == 1 || policy == ParallelPolicy::Serial {
                 Some(false)
-            } else if policy == ParallelPolicy::Parallel {
+            } else if policy == ParallelPolicy::Parallel || !device.is_cpu() {
                 Some(true)
             } else {
                 None

@@ -40,6 +40,7 @@ use layers::Layer;
 
 #[derive(Clone)]
 pub struct Model {
+    device: Device,
     config: Config,
     shared: QMatMul,
     positions: Tensor,
@@ -51,6 +52,7 @@ pub struct Model {
 }
 impl Model {
     pub fn new(cfg: &Config, vb: Weights) -> Result<Self> {
+        let device = vb.device().clone();
         let vb = vb.pp("model");
         let shared = vb.matrix("shared.weight", (cfg.vocab_size, cfg.d_model))?;
         let half = cfg.d_model / 2;
@@ -74,7 +76,7 @@ impl Model {
         let positions = Tensor::from_vec(
             positions,
             (cfg.max_position_embeddings + 2, cfg.d_model),
-            &Device::Cpu,
+            &device,
         )?;
         let encoder = (0..cfg.encoder_layers)
             .map(|i| Layer::new(cfg, false, vb.pp(format!("encoder.layers.{i}"))))
@@ -83,6 +85,7 @@ impl Model {
             .map(|i| Layer::new(cfg, true, vb.pp(format!("decoder.layers.{i}"))))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
+            device,
             config: cfg.clone(),
             shared,
             positions,
@@ -98,7 +101,7 @@ impl Model {
         // Inputs have no padding; source and target language prefixes are real tokens.
         let x = self
             .shared
-            .embedding(&Tensor::new(ids, &Device::Cpu)?)?
+            .embedding(&Tensor::new(ids, &self.device)?)?
             .to_dtype(DType::F32)?
             .unsqueeze(0)?;
         let x = if self.config.scale_embedding {
@@ -117,7 +120,7 @@ impl Model {
         profile_scope!(Embedding);
         let x = self
             .shared
-            .embedding(&Tensor::new(ids, &Device::Cpu)?)?
+            .embedding(&Tensor::new(ids, &self.device)?)?
             .to_dtype(DType::F32)?
             .unsqueeze(0)?;
         let x = if self.config.scale_embedding {
@@ -128,7 +131,7 @@ impl Model {
         x.broadcast_add(
             &self
                 .positions
-                .index_select(&Tensor::new(positions, &Device::Cpu)?, 0)?
+                .index_select(&Tensor::new(positions, &self.device)?, 0)?
                 .unsqueeze(0)?,
         )
     }
@@ -159,7 +162,7 @@ impl Model {
             Some(Tensor::from_vec(
                 data,
                 (length, past + length),
-                &Device::Cpu,
+                &self.device,
             )?)
         } else {
             None

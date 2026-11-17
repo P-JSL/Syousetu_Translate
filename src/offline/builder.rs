@@ -1,5 +1,5 @@
 //! Construction policy: required model location, typed CPU budget and defaults.
-use super::{OfflineTranslator, ParallelPolicy};
+use super::{InferenceDevice, OfflineTranslator, ParallelPolicy};
 use crate::learning::Memory;
 use anyhow::Result;
 use std::{
@@ -24,6 +24,8 @@ pub struct TranslatorBuilder {
     policy: ParallelPolicy,
     workers: usize,
     result_cache: Option<PathBuf>,
+    device: InferenceDevice,
+    cuda_ordinal: usize,
 }
 impl TranslatorBuilder {
     pub(super) fn new(root: &Path) -> Self {
@@ -38,6 +40,8 @@ impl TranslatorBuilder {
             policy: ParallelPolicy::Auto,
             workers: 32,
             result_cache: None,
+            device: InferenceDevice::Auto,
+            cuda_ordinal: 0,
         }
     }
     pub fn memory(mut self, memory: Memory) -> Self {
@@ -54,6 +58,14 @@ impl TranslatorBuilder {
     }
     pub fn workers(mut self, workers: usize) -> Self {
         self.workers = workers.clamp(1, 256);
+        self
+    }
+    pub fn device(mut self, device: InferenceDevice) -> Self {
+        self.device = device;
+        self
+    }
+    pub fn cuda_ordinal(mut self, ordinal: usize) -> Self {
+        self.cuda_ordinal = ordinal;
         self
     }
     /// Reuse completed results across runs of the same verified program,
@@ -74,6 +86,7 @@ impl TranslatorBuilder {
             self.policy,
             self.workers,
             self.result_cache.as_deref(),
+            (self.device, self.cuda_ordinal),
         )
     }
 }

@@ -28,6 +28,8 @@ pub struct Config {
     pub learning_enabled: bool,
     pub reuse_translations: bool,
     pub parallel_mode: String,
+    pub inference_device: String,
+    pub cuda_device: usize,
     pub ca_bundle: Option<String>,
     pub user_agent: String,
     pub max_title_length: usize,
@@ -55,6 +57,8 @@ impl Default for Config {
             learning_enabled: true,
             reuse_translations: true,
             parallel_mode: "auto".into(),
+            inference_device: "auto".into(),
+            cuda_device: 0,
             ca_bundle: None,
             user_agent: "SyousetuTranslateRust/0.3 (personal web novel reader)".into(),
             max_title_length: 25,
@@ -152,6 +156,19 @@ impl Config {
                         bail!("parallel_mode: auto|serial|parallel이어야 합니다");
                     }
                     cfg.parallel_mode = value;
+                }
+                "inference_device" => {
+                    if !matches!(value.as_str(), "auto" | "cpu" | "cuda") {
+                        bail!("inference_device: auto|cpu|cuda이어야 합니다");
+                    }
+                    cfg.inference_device = value;
+                }
+                "cuda_device" => {
+                    let ordinal = number()?;
+                    if ordinal > 31 {
+                        bail!("cuda_device는 0~31이어야 합니다");
+                    }
+                    cfg.cuda_device = ordinal as usize;
                 }
                 "title_format" => cfg.title_format = value,
                 "page_number_format" => {
@@ -258,6 +275,8 @@ impl Config {
             ("learning_enabled", self.learning_enabled.to_string()),
             ("reuse_translations", self.reuse_translations.to_string()),
             ("parallel_mode", self.parallel_mode.clone()),
+            ("inference_device", self.inference_device.clone()),
+            ("cuda_device", self.cuda_device.to_string()),
             ("ca_bundle", self.ca_bundle.clone().unwrap_or_default()),
             (
                 "eztrans_path",

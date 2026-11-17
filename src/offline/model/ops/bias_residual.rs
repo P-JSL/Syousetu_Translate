@@ -1,6 +1,6 @@
 //! Fuse `residual + (projection + bias)`, retaining both F32 additions and
 //! their order while avoiding the intermediate biased projection buffer.
-use candle_core::{CpuStorage, CustomOp3, Layout, Result, Shape, Tensor};
+use candle_core::{CpuStorage, CustomOp3, DType, Layout, Result, Shape, Tensor};
 use rayon::prelude::*;
 struct BiasResidual;
 impl CustomOp3 for BiasResidual {
@@ -54,10 +54,20 @@ pub(in crate::offline::model) fn forward(
     bias: &Tensor,
     residual: &Tensor,
 ) -> Result<Tensor> {
+    if !x.device().is_cpu() {
+        return tensor_forward(x, bias, residual);
+    }
     if !x.is_contiguous() || !bias.is_contiguous() || !residual.is_contiguous() {
         return residual + x.broadcast_add(bias)?;
     }
     x.apply_op3_no_bwd(bias, residual, &BiasResidual)
+}
+
+fn tensor_forward(x: &Tensor, bias: &Tensor, residual: &Tensor) -> Result<Tensor> {
+    let biased = x
+        .to_dtype(DType::F32)?
+        .broadcast_add(&bias.to_dtype(DType::F32)?)?;
+    residual.to_dtype(DType::F32)? + biased
 }
 #[cfg(test)]
 mod tests {
@@ -114,5 +124,18 @@ mod tests {
             let bias = Tensor::zeros(rows, candle_core::DType::F32, &Device::Cpu).unwrap();
             compare(&transposed, &bias, &residual);
         }
+    }
+
+    #[test]
+    fn portable_residual_retains_f32_addition_order() {
+        let x = Tensor::new(&[[-1e10f32, 65_504.]], &Device::Cpu).unwrap();
+        let bias = Tensor::new(&[1e10f32, 65_504.], &Device::Cpu).unwrap();
+        let residual = Tensor::new(&[[1f32, 2.]], &Device::Cpu)
+            .unwrap()
+            .to_dtype(DType::F16)
+            .unwrap();
+        let result = tensor_forward(&x, &bias, &residual).unwrap();
+        assert_eq!(result.dtype(), DType::F32);
+        assert_eq!(result.to_vec2::<f32>().unwrap()[0], [1., 131_010.]);
     }
 }

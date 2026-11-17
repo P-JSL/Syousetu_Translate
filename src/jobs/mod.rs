@@ -184,3 +184,30 @@ pub fn sibling_cli(executable: &Path) -> PathBuf {
         "syousetu-translate"
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn queued_gpu_settings_are_validated_and_snapshotted() {
+        let mut queue = Queue::new("unused-cli", ".");
+        let mut config = Config {
+            inference_device: "cuda".into(),
+            cuda_device: 1,
+            ..Config::default()
+        };
+        let id = queue
+            .enqueue("GPU task".into(), vec!["file".into()], &config)
+            .unwrap();
+        config.inference_device = "cpu".into();
+        config.cuda_device = 0;
+        let saved = Config::parse(&queue.get(id).unwrap().config.to_properties().unwrap()).unwrap();
+        assert_eq!(saved.inference_device, "cuda");
+        assert_eq!(saved.cuda_device, 1);
+        config.cuda_device = 32;
+        assert!(queue
+            .enqueue("invalid".into(), vec!["file".into()], &config)
+            .is_err());
+        assert_eq!(queue.jobs.len(), 1);
+    }
+}

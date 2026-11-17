@@ -11,9 +11,16 @@ pub struct Weights {
     prefix: String,
     quantized: Arc<HashMap<String, Arc<QTensor>>>,
     floats: Arc<HashMap<String, Tensor>>,
+    gpu_matrices: Arc<HashMap<String, Tensor>>,
+    device: Device,
 }
 impl Weights {
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::open_on_device(directory, &Device::Cpu)
+    }
+    /// The pinned on-disk Q8 model is expanded once for CUDA Tensor Core GEMM.
+    /// CPU keeps its original Q8 arithmetic; GPU normalization/residuals are F32.
+    pub fn open_on_device(directory: &Path, device: &Device) -> Result<Self> {
         verify(directory)?;
         let mut file = BufReader::new(File::open(directory.join(spec().file))?);
         let content = Content::read(&mut file)?;
@@ -27,6 +34,7 @@ impl Weights {
         );
         let mut floats = HashMap::new();
         let mut quantized = HashMap::new();
+        let mut gpu_matrices = HashMap::new();
         let mut names = content.tensor_infos.keys().cloned().collect::<Vec<_>>();
         names.sort();
         for name in names {
@@ -36,15 +44,22 @@ impl Weights {
                     tensor.dtype() == GgmlDType::Q8_0,
                     "INT8이 아닌 행렬: {name}"
                 );
-                quantized.insert(name, Arc::new(tensor));
+                if device.is_cpu() {
+                    quantized.insert(name, Arc::new(tensor));
+                } else {
+                    let weights = tensor.dequantize_f16(&Device::Cpu)?.to_device(device)?;
+                    gpu_matrices.insert(name, weights);
+                }
             } else {
-                floats.insert(name, tensor.dequantize(&Device::Cpu)?);
+                floats.insert(name, tensor.dequantize(&Device::Cpu)?.to_device(device)?);
             }
         }
         Ok(Self {
             prefix: String::new(),
             quantized: Arc::new(quantized),
             floats: Arc::new(floats),
+            gpu_matrices: Arc::new(gpu_matrices),
+            device: device.clone(),
         })
     }
     pub fn pp(&self, path: impl std::fmt::Display) -> Self {
@@ -58,6 +73,9 @@ impl Weights {
             ..self.clone()
         }
     }
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
     fn name(&self, key: &str) -> String {
         if self.prefix.is_empty() {
             key.into()
@@ -67,6 +85,12 @@ impl Weights {
     }
     pub fn matrix(&self, key: &str, shape: (usize, usize)) -> candle_core::Result<QMatMul> {
         let name = self.name(key);
+        if let Some(tensor) = self.gpu_matrices.get(&name) {
+            if tensor.dims() != [shape.0, shape.1] {
+                candle_core::bail!("GPU 행렬 크기 불일치: {name}");
+            }
+            return Ok(QMatMul::TensorF16(tensor.clone()));
+        }
         let tensor = self
             .quantized
             .get(&name)

@@ -93,7 +93,9 @@ pub(super) fn engine_from_args(
                 .memory(memory)
                 .workers(config.workers())
                 .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
-                .parallel_policy(config.parallel_mode.parse()?);
+                .parallel_policy(config.parallel_mode.parse()?)
+                .device(config.inference_device.parse()?)
+                .cuda_ordinal(config.cuda_device);
             let reuse = config.reuse_translations
                 && (!flag(args, "--no-learning") || flag(args, "--reuse-results"));
             let builder = if reuse {

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The F32 CPU operations used by SMaLL-100.
+//! F32 operations used by SMaLL-100, with exact CPU fast paths and portable
+//! tensor fallbacks for accelerator devices.
 //! Adapted from Hugging Face Candle NN 0.11.1 ops.rs/layer_norm.rs. The
 //! accumulation order and vector reductions match the upstream CPU kernels.
 use crate::int8::Weights;
-use candle_core::{cpu::kernels::VecOps, CpuStorage, Layout, Module, Result, Shape, Tensor, D};
+use candle_core::{
+    cpu::kernels::VecOps, CpuStorage, DType, Layout, Module, Result, Shape, Tensor, D,
+};
 use rayon::prelude::*;
 pub(super) mod attention;
 pub(super) mod bias_relu;
@@ -53,7 +56,35 @@ impl candle_core::CustomOp1 for Softmax {
     }
 }
 pub fn softmax_last_dim(x: &Tensor) -> Result<Tensor> {
+    if !x.device().is_cpu() {
+        return tensor_softmax_last_dim(x);
+    }
     x.apply_op1_no_bwd(&Softmax)
+}
+
+// Keep reductions and exponentials in F32 even if a matrix projection used
+// lower-precision device weights. The result remains on the input device.
+fn tensor_softmax_last_dim(x: &Tensor) -> Result<Tensor> {
+    if x.dim(D::Minus1)? == 0 {
+        candle_core::bail!("softmax width is zero");
+    }
+    let x = x.to_dtype(DType::F32)?;
+    let numerator = x.broadcast_sub(&x.max_keepdim(D::Minus1)?)?.exp()?;
+    numerator.broadcast_div(&numerator.sum_keepdim(D::Minus1)?)
+}
+
+fn tensor_layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f64) -> Result<Tensor> {
+    let width = x.dim(D::Minus1)?;
+    if width == 0 || width != weight.dims1()? || width != bias.dims1()? {
+        candle_core::bail!("layer norm shape mismatch");
+    }
+    let x = x.to_dtype(DType::F32)?;
+    let centered = x.broadcast_sub(&(x.sum_keepdim(D::Minus1)? / width as f64)?)?;
+    let variance = (centered.sqr()?.sum_keepdim(D::Minus1)? / width as f64)?;
+    centered
+        .broadcast_div(&(variance + eps)?.sqrt()?)?
+        .broadcast_mul(&weight.to_dtype(DType::F32)?)?
+        .broadcast_add(&bias.to_dtype(DType::F32)?)
 }
 
 struct NormOp {
@@ -123,6 +154,9 @@ impl Module for LayerNorm {
         if width != self.weight.dims1()? || width != self.bias.dims1()? {
             candle_core::bail!("layer norm shape mismatch");
         }
+        if !x.device().is_cpu() {
+            return tensor_layer_norm(x, &self.weight, &self.bias, self.eps);
+        }
         if x.is_contiguous() {
             return x.apply_op3_no_bwd(
                 &self.weight,
@@ -182,5 +216,41 @@ mod tests {
         let result = two.forward(&transposed).unwrap().to_vec2::<f32>().unwrap();
         assert!(result[0][0] < -0.99);
         assert_eq!(result[1], [0., 0.]);
+    }
+
+    #[test]
+    fn portable_reductions_use_f32_and_handle_large_offsets_and_strides() {
+        let x = Tensor::new(&[[1000f32, 1001., 1000., 1001.]], &Device::Cpu)
+            .unwrap()
+            .to_dtype(DType::F16)
+            .unwrap();
+        let probabilities = tensor_softmax_last_dim(&x).unwrap();
+        assert_eq!(probabilities.dtype(), DType::F32);
+        let probabilities = probabilities.to_vec2::<f32>().unwrap();
+        assert!((probabilities[0].iter().sum::<f32>() - 1.).abs() < 1e-6);
+        assert!((probabilities[0][0] - 0.13447072).abs() < 1e-6);
+
+        let x = Tensor::new(&[[10_000f32, 10_001., 10_002.], [2., 2., 2.]], &Device::Cpu).unwrap();
+        let weight = Tensor::new(&[1f32; 3], &Device::Cpu).unwrap();
+        let bias = Tensor::new(&[0f32; 3], &Device::Cpu).unwrap();
+        let normalized = tensor_layer_norm(&x, &weight, &bias, 1e-5)
+            .unwrap()
+            .to_vec2::<f32>()
+            .unwrap();
+        assert!((normalized[0][0] + 1.2247356).abs() < 1e-5);
+        assert_eq!(normalized[1], [0., 0., 0.]);
+
+        let transposed = x.transpose(0, 1).unwrap();
+        let weight = Tensor::new(&[1f32; 2], &Device::Cpu).unwrap();
+        let bias = Tensor::new(&[0f32; 2], &Device::Cpu).unwrap();
+        let result = tensor_layer_norm(&transposed, &weight, &bias, 1e-5)
+            .unwrap()
+            .to_vec2::<f32>()
+            .unwrap();
+        for row in result {
+            assert!(row.iter().all(|value| value.is_finite()));
+            assert!((row[0] - 1.).abs() < 1e-5);
+            assert!((row[1] + 1.).abs() < 1e-5);
+        }
     }
 }

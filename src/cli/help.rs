@@ -24,6 +24,7 @@ pub(super) fn print() {
   memory --import-ehnd EXTRACTED_DIRECTORY [--memory-path FILE]
   memory --import-dictionary USERDICT.jk_OR_TSV [--memory-path FILE]
   Internal: --model-dir PATH, --memory-path PATH, --no-learning
+  Device: --device auto|cpu|cuda [--cuda-device 0..31] (default: auto, CUDA requires a CUDA-enabled build)
   Result reuse: --reuse-results | --no-result-cache [--result-cache-dir PATH] (internal only)
   --no-learning also disables disk result reuse unless --reuse-results is explicit.
   Vocabulary: full model vocabulary; --full-vocabulary is accepted for existing scripts

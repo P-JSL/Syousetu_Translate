@@ -1,5 +1,5 @@
 //! Fuse bias addition and ReLU without changing either arithmetic operation.
-use candle_core::{CpuStorage, CustomOp2, Layout, Result, Shape, Tensor};
+use candle_core::{CpuStorage, CustomOp2, DType, Layout, Result, Shape, Tensor};
 use rayon::prelude::*;
 struct BiasRelu;
 impl CustomOp2 for BiasRelu {
@@ -44,10 +44,19 @@ impl CustomOp2 for BiasRelu {
     }
 }
 pub(in crate::offline::model) fn forward(x: &Tensor, bias: &Tensor) -> Result<Tensor> {
+    if !x.device().is_cpu() {
+        return tensor_forward(x, bias);
+    }
     if !x.is_contiguous() || !bias.is_contiguous() {
         return x.broadcast_add(bias)?.relu();
     }
     x.apply_op2_no_bwd(bias, &BiasRelu)
+}
+
+fn tensor_forward(x: &Tensor, bias: &Tensor) -> Result<Tensor> {
+    x.to_dtype(DType::F32)?
+        .broadcast_add(&bias.to_dtype(DType::F32)?)?
+        .relu()
 }
 #[cfg(test)]
 mod tests {
@@ -99,5 +108,17 @@ mod tests {
                     .collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn portable_bias_addition_promotes_before_relu() {
+        let x = Tensor::new(&[[-0.5f32, 0.5, 65_504.]], &Device::Cpu)
+            .unwrap()
+            .to_dtype(DType::F16)
+            .unwrap();
+        let bias = Tensor::new(&[0.25f32, -1., 65_504.], &Device::Cpu).unwrap();
+        let result = tensor_forward(&x, &bias).unwrap();
+        assert_eq!(result.dtype(), DType::F32);
+        assert_eq!(result.to_vec2::<f32>().unwrap()[0], [0., 0., 131_008.]);
     }
 }

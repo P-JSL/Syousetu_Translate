@@ -44,6 +44,34 @@ impl Desktop {
                 }
             });
         ui.label("internal: Rust 내부 오프라인 번역 · passthrough: 원문 저장");
+        egui::ComboBox::from_label("번역 연산 장치")
+            .selected_text(match self.config.inference_device.as_str() {
+                "cpu" => "CPU",
+                "cuda" => "NVIDIA GPU (CUDA)",
+                _ => "자동",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.config.inference_device, "auto".into(), "자동");
+                ui.selectable_value(&mut self.config.inference_device, "cpu".into(), "CPU");
+                ui.add_enabled_ui(cfg!(feature = "cuda"), |ui| {
+                    ui.selectable_value(
+                        &mut self.config.inference_device,
+                        "cuda".into(),
+                        "NVIDIA GPU (CUDA)",
+                    );
+                });
+            });
+        if cfg!(feature = "cuda") {
+            ui.label("자동: GPU를 사용할 수 없으면 CPU로 시작합니다.");
+            if self.config.inference_device != "cpu" {
+                ui.horizontal(|ui| {
+                    ui.label("NVIDIA GPU 번호");
+                    ui.add(egui::DragValue::new(&mut self.config.cuda_device).range(0..=31));
+                });
+            }
+        } else {
+            ui.label("현재 실행 파일은 CPU용입니다. NVIDIA GPU 사용에는 CUDA 빌드가 필요합니다.");
+        }
         row_option(
             ui,
             "모델 폴더 (비우면 내장 모델 자동 선택)",

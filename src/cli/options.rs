@@ -96,6 +96,19 @@ pub fn settings(args: &[String]) -> Result<Config> {
         }
         cfg.parallel_mode = mode;
     }
+    if let Some(device) = value(args, "--device") {
+        if !matches!(device.as_str(), "auto" | "cpu" | "cuda") {
+            bail!("--device: auto|cpu|cuda이어야 합니다");
+        }
+        cfg.inference_device = device;
+    }
+    if value(args, "--cuda-device").is_some() {
+        let ordinal = num(args, "--cuda-device", 0)?;
+        if ordinal > 31 {
+            bail!("--cuda-device는 0~31이어야 합니다");
+        }
+        cfg.cuda_device = ordinal;
+    }
     Ok(cfg)
 }
 pub fn validate(command: &str, args: &[String]) -> Result<()> {
@@ -111,6 +124,8 @@ pub fn validate(command: &str, args: &[String]) -> Result<()> {
         "--memory-path",
         "--result-cache-dir",
         "--parallel-mode",
+        "--device",
+        "--cuda-device",
         "--ca-bundle",
     ];
     let common_flags = [
@@ -266,5 +281,38 @@ mod tests {
         assert!(validate("typo", &[]).is_err());
         assert!(settings(&args(&["--jobs", "0"])).is_err());
         assert!(settings(&args(&["--japanese", "--no-japanese"])).is_err());
+    }
+    #[test]
+    fn gpu_options_parse_and_reject_invalid_values_before_model_loading() {
+        for command in ["translate", "file", "download", "worker"] {
+            let values = args(&["--device", "cuda", "--cuda-device", "31"]);
+            validate(command, &values).unwrap();
+            let config = settings(&values).unwrap();
+            assert_eq!(config.inference_device, "cuda");
+            assert_eq!(config.cuda_device, 31);
+        }
+        for device in ["auto", "cpu"] {
+            assert_eq!(
+                settings(&args(&["--device", device]))
+                    .unwrap()
+                    .inference_device,
+                device
+            );
+        }
+        for values in [
+            vec!["--device", "gpu"],
+            vec!["--device", "CUDA"],
+            vec!["--cuda-device", "-1"],
+            vec!["--cuda-device", "32"],
+        ] {
+            assert!(settings(&args(&values)).is_err(), "{values:?}");
+        }
+        for values in [
+            vec!["--device"],
+            vec!["--cuda-device"],
+            vec!["--device", "cpu", "--device", "cuda"],
+        ] {
+            assert!(validate("translate", &args(&values)).is_err());
+        }
     }
 }

@@ -157,6 +157,10 @@ mod tests {
             "novel.txt",
             "--jobs",
             "32",
+            "--device",
+            "cuda",
+            "--cuda-device",
+            "1",
             "--no-learning",
         ]
         .map(str::to_owned);
@@ -169,6 +173,10 @@ mod tests {
                 "dictionary.tsv",
                 "--jobs",
                 "32",
+                "--device",
+                "cuda",
+                "--cuda-device",
+                "1",
                 "--no-learning",
             ]
         );

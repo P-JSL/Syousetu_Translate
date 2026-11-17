@@ -70,6 +70,11 @@ impl Projection {
         if rows == 0 || rows != blocked.len() {
             candle_core::bail!("projection row mismatch");
         }
+        if !input.device().is_cpu() {
+            let scores = weight.forward(input)?;
+            return super::super::selection::gpu::select_rows(&scores, vocab, eos, blocked)
+                .map_err(|error| candle_core::Error::Msg(error.to_string()));
+        }
         if rows == 1 {
             return Self::dense(weight, input, vocab, eos, blocked);
         }

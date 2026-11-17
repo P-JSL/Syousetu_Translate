@@ -1,5 +1,6 @@
 //! Offline inference facade. Weights are immutable; runner state is isolated.
 mod builder;
+mod device;
 mod model;
 mod ordered;
 mod policy;
@@ -12,6 +13,7 @@ mod selection;
 mod text;
 mod tokenizer;
 pub use builder::{CpuBudget, TranslatorBuilder};
+pub use device::InferenceDevice;
 pub use cache::CacheStats;
 pub use policy::ParallelPolicy;
 use runner::Runner;

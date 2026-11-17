@@ -11,6 +11,7 @@ default = ["offline-model"]
 offline-model = ["dep:candle-core", "dep:sentencepiece-rs", "dep:rayon", "dep:gemm"]
 model-tools = ["offline-model", "candle-core/safetensors"]
 inference-profile = ["offline-model"]
+cuda = ["offline-model", "candle-core/cuda"]
 legacy = ["dep:fancy-regex", "dep:libloading"]
 gui = ["offline-model", "dep:eframe", "dep:tinyfiledialogs"]
 

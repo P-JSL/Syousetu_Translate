@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fused CPU attention with the same GEMM parameters/reductions as Candle.
 //! Avoids intermediate Tensor/layout objects and reuses per-thread scratch.
-use candle_core::{cpu::kernels::VecOps, CpuStorage, Device, Result, Storage, Tensor};
+use candle_core::{cpu::kernels::VecOps, CpuStorage, DType, Device, Result, Storage, Tensor};
 use rayon::prelude::*;
 use std::cell::RefCell;
 
@@ -39,6 +39,9 @@ pub(in crate::offline::model) fn context(
         || v.dims() != [heads, length, dim]
     {
         candle_core::bail!("fused attention shape mismatch");
+    }
+    if !q.device().is_cpu() {
+        return tensor_context(q, k, v, scale);
     }
     let score_len = rows
         .checked_mul(length)
@@ -150,6 +153,23 @@ pub(in crate::offline::model) fn context(
         .reshape((1, rows, heads * dim))
 }
 
+// The accelerator path uses Candle's own device kernels. Scaling precedes
+// QK multiplication, softmax stays in F32, then the original head order is
+// restored. Contiguous operands are accepted by batched device GEMM.
+fn tensor_context(q: &Tensor, k: &Tensor, v: &Tensor, scale: f64) -> Result<Tensor> {
+    let (heads, rows, dim) = q.dims3()?;
+    let q = q.to_dtype(DType::F32)?.contiguous()?;
+    let k = k.to_dtype(DType::F32)?.transpose(1, 2)?.contiguous()?;
+    let v = v.to_dtype(DType::F32)?.contiguous()?;
+    let scores = (q * scale)?.matmul(&k)?;
+    super::tensor_softmax_last_dim(&scores)?
+        .matmul(&v)?
+        .reshape((1, heads, rows, dim))?
+        .transpose(1, 2)?
+        .contiguous()?
+        .reshape((1, rows, heads * dim))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +224,18 @@ mod tests {
                 expected.flatten_all().unwrap().to_vec1::<f32>().unwrap(),
                 "shape {heads}/{rows}/{length}"
             );
+            let portable = tensor_context(&q, &k, &v, 0.125)
+                .unwrap()
+                .flatten_all()
+                .unwrap()
+                .to_vec1::<f32>()
+                .unwrap();
+            for (actual, expected) in portable
+                .into_iter()
+                .zip(expected.flatten_all().unwrap().to_vec1::<f32>().unwrap())
+            {
+                assert!((actual - expected).abs() < 2e-6, "portable attention");
+            }
         }
     }
 }

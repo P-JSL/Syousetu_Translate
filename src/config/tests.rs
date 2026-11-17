@@ -1,5 +1,47 @@
 use super::*;
 #[test]
+fn gpu_settings_preserve_legacy_defaults_and_roundtrip_all_devices() {
+    let old = Config::parse("translator_name=internal\n").unwrap();
+    assert_eq!(old.inference_device, "auto");
+    assert_eq!(old.cuda_device, 0);
+    let old_json: Config = serde_json::from_str(r#"{"translator_name":"internal"}"#).unwrap();
+    assert_eq!(old_json.inference_device, "auto");
+    assert_eq!(old_json.cuda_device, 0);
+    for device in ["auto", "cpu", "cuda"] {
+        for ordinal in [0, 31] {
+            let config = Config {
+                inference_device: device.into(),
+                cuda_device: ordinal,
+                ..Config::default()
+            };
+            assert_eq!(
+                Config::parse(&config.to_properties().unwrap()).unwrap(),
+                config
+            );
+        }
+    }
+}
+#[test]
+fn invalid_gpu_settings_cannot_be_saved_or_loaded() {
+    for text in [
+        "inference_device=gpu",
+        "inference_device=CUDA",
+        "cuda_device=-1",
+        "cuda_device=32",
+        "cuda_device=not-a-number",
+    ] {
+        assert!(Config::parse(text).is_err(), "{text}");
+    }
+    let mut config = Config {
+        cuda_device: 32,
+        ..Config::default()
+    };
+    assert!(config.to_properties().is_err());
+    config.cuda_device = 0;
+    config.inference_device = "gpu".into();
+    assert!(config.to_properties().is_err());
+}
+#[test]
 fn download_folder_roundtrips_and_windows_default_matches_requested_path() {
     let c = Config {
         download_dir: Some(r"C:\Users\rabbit\OneDrive\문서".into()),
