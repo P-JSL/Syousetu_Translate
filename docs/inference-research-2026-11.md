@@ -61,9 +61,10 @@ softmax because greedy softmax argmax has the same maximizer for finite logits.
 No probability threshold, reduced vocabulary or approximate nearest-neighbor
 index is substituted for the original maximum.
 
-`model/projection.rs` warms both implementations, discards the first timing,
-alternates timing order and compares three paired samples for each row-count
-bucket. It chooses fused selection only when its median is at least 5% shorter.
+`model/projection.rs` compares at most two pairs for each row-count bucket.
+It warms both implementations and discards the first pair's timing, then
+reverses execution order for the second pair. It chooses fused selection only
+when that second measurement is more than 5% shorter.
 Reference tokens are returned during calibration; a disagreement or unsupported
 backend selects the dense path. Lock poisoning is an error. This is a bounded
 empirical policy, not a statistical guarantee of optimal latency.
