@@ -228,6 +228,19 @@ fn prepare_host_compiler() -> Result<()> {
     Err("host-compiler setup is for the optional Windows Actions job".into())
 }
 
+fn create_output_directory(output: &Path) -> Result<()> {
+    if output.exists() {
+        return Err("Use a new destination; existing packages are never overwritten".into());
+    }
+    if let Some(parent) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create package parent {}: {e}", parent.display()))?;
+    }
+    // Retain an exclusive final-directory creation after creating parents.
+    fs::create_dir(output)
+        .map_err(|e| format!("Cannot create new package {}: {e}", output.display()))
+}
+
 fn stage(executables: &Path, toolkit: &Path, output: &Path) -> Result<()> {
     if output.exists() {
         return Err("Use a new destination; existing packages are never overwritten".into());
@@ -254,7 +267,7 @@ fn stage(executables: &Path, toolkit: &Path, output: &Path) -> Result<()> {
     // unchanged CUDA 12.8 license from the hash-verified official archive;
     // packaging must not depend on optional SDK documentation components.
     let eula = include_bytes!("../licenses/NVIDIA-CUDA-12.8-EULA.txt");
-    fs::create_dir(output).map_err(|e| e.to_string())?;
+    create_output_directory(output)?;
     for executable in ["syousetu-gui.exe", "syousetu-translate.exe"] {
         copy(&executables.join(executable), &output.join(executable))?;
     }
@@ -303,6 +316,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn new_package_creates_missing_parents_and_preserves_existing_output() {
+        let root = std::env::temp_dir().join(format!(
+            "cuda-package-parent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let output = root.join("dist/cuda-overlay");
+        create_output_directory(&output).unwrap();
+        let sentinel = output.join("keep.txt");
+        fs::write(&sentinel, b"existing package").unwrap();
+        assert!(create_output_directory(&output).is_err());
+        assert_eq!(fs::read(sentinel).unwrap(), b"existing package");
+    }
     fn available(names: &[&str]) -> BTreeMap<String, PathBuf> {
         names
             .iter()
