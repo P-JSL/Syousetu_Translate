@@ -1,0 +1,128 @@
+{
+  "chapters": 35,
+  "samples": [
+    {
+      "trial": 1,
+      "variant": "control",
+      "seconds": 54.039274494,
+      "sampled_peak_rss_kib": 1417184,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "trial": 1,
+      "variant": "candidate",
+      "seconds": 49.062959299,
+      "sampled_peak_rss_kib": 1328900,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "trial": 2,
+      "variant": "candidate",
+      "seconds": 50.755108414,
+      "sampled_peak_rss_kib": 1467760,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "trial": 2,
+      "variant": "control",
+      "seconds": 47.750385539,
+      "sampled_peak_rss_kib": 1361576,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    }
+  ],
+  "excluded_samples": [
+    {
+      "trial": 3,
+      "variant": "control",
+      "seconds": 49.802665798,
+      "sampled_peak_rss_kib": 1356152,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    }
+  ],
+  "exclusion_reason": "The old three-pair loop was stopped after the user's maximum-two-trials instruction; its extra control was disclosed and is not used to claim a speedup.",
+  "control_median_seconds": 50.894830016499995,
+  "candidate_median_seconds": 49.9090338565,
+  "sampled_control_peak_rss_kib": 1417184,
+  "sampled_candidate_peak_rss_kib": 1467760,
+  "control_sha256": "829607aaca75e2bb646cf6af907d0f2a8974f6137cc7e9f1cc3b65f4fa38a817",
+  "candidate_sha256": "2c47ceffdd7c2cfd75883fac97e8064a2a82eb5fe803f9c3256cdbdd20327d57",
+  "paired_trials": 2,
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "all_outputs_byte_identical": true,
+  "all_full_work_structural_checks_passed": true,
+  "recorded_date": "2026-11-17",
+  "time_zone": "Asia/Seoul",
+  "source_parent_commit": "6d73310da566d95b549bc6b46733529c59c92da6",
+  "cpu": "AMD EPYC 9V45",
+  "cpu_quota": 4,
+  "gpu_available": false,
+  "logical_contexts": 128,
+  "parallel_policy": "parallel",
+  "cached_source_html": true,
+  "new_process_per_sample": true,
+  "os_file_cache_cleared": false,
+  "correction_memory": false,
+  "disk_result_reuse": false,
+  "semantic_accuracy_certified": false,
+  "candidate_adopted": false,
+  "rejection_reason": "The bounded-buffer prototype regressed on the 24-chapter first translation. Runtime reverted; no claim of an 85–95% gain.",
+  "target_baseline": "same-session existing SMaLL-100 INT8 control executable",
+  "historical_v032_is_not_current_acceptance_baseline": true,
+  "memory_sampling_interval_ms": 10,
+  "memory_limit_is_validation_only": true,
+  "candidate_time_reduction_percent": 1.9369278955846836,
+  "first_translation_85_percent_faster_than_control": false,
+  "first_translation_90_percent_faster_than_control": false,
+  "first_translation_95_percent_faster_than_control": false,
+  "memory_increase_within_review_limits": true
+}

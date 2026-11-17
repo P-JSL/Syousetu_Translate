@@ -1,0 +1,136 @@
+{
+  "all_full_work_structural_checks_passed": true,
+  "all_outputs_byte_identical": true,
+  "alternating_process_order": true,
+  "cached_source_html": true,
+  "candidate_median_seconds": 49.542673985,
+  "candidate_sha256": "6aa5596bd8b8c2b1a50989be5768949cc0482b7505a20c4e31f583309b28a2e6",
+  "candidate_time_reduction_percent": 1.957233487334309,
+  "chapters": 35,
+  "control_median_seconds": 50.531697285999996,
+  "control_sha256": "829607aaca75e2bb646cf6af907d0f2a8974f6137cc7e9f1cc3b65f4fa38a817",
+  "correction_memory": false,
+  "disk_result_reuse": false,
+  "first_translation_90_percent_met": false,
+  "first_translation_95_percent_met": false,
+  "logical_contexts": 128,
+  "model_sha256": "536bff54568334a3baf800d02984c53f0649af620309577f431877bde350ec9c",
+  "new_process_per_sample": true,
+  "original_v032_seconds": 163.110703742,
+  "os_file_cache_cleared": false,
+  "parallel_policy": "parallel",
+  "samples": [
+    {
+      "seconds": 50.531697285999996,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 1,
+      "variant": "control",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "seconds": 49.542673985,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 1,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "seconds": 49.710798777,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 2,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "seconds": 52.029623374,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 2,
+      "variant": "control",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "seconds": 49.672846959,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 3,
+      "variant": "control",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    },
+    {
+      "seconds": 48.515997275,
+      "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+      "trial": 3,
+      "variant": "candidate",
+      "verification": {
+        "bytes": 607026,
+        "chapters": 35,
+        "complete": true,
+        "korean_lines": 3297,
+        "nonempty_source_lines": 3354,
+        "semantic_accuracy_certified": false,
+        "sha256": "a01ef9cac141faa625e740b353a6c2ed8800c9cec58f68e8fa5599fe879007bb",
+        "source_lines": 6248
+      }
+    }
+  ],
+  "semantic_accuracy_certified": false,
+  "time_reduction_from_v032_percent": 69.62635017296964,
+  "url": "https://kakuyomu.jp/works/11054822663814504924",
+  "recorded_date": "2026-11-17",
+  "time_zone": "Asia/Seoul",
+  "source_parent_commit": "6d73310da566d95b549bc6b46733529c59c92da6",
+  "cpu": "AMD EPYC 9V45",
+  "cpu_quota": 4,
+  "gpu_available": false,
+  "candidate_adopted": false,
+  "rejection_reason": "Historical unbounded-buffer prototype, not adopted. Its separate 35-chapter RSS pilot fits the later memory allowance; it is not the final capped-validation candidate.",
+  "target_baseline": "same-session existing SMaLL-100 INT8 control executable",
+  "historical_v032_is_not_current_acceptance_baseline": true,
+  "first_translation_85_percent_faster_than_control": false,
+  "first_translation_90_percent_faster_than_control": false,
+  "first_translation_95_percent_faster_than_control": false
+}
