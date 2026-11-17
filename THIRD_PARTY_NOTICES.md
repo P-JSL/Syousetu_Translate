@@ -42,6 +42,15 @@ The Apache-2.0 license is included in [licenses/Apache-2.0.txt](licenses/Apache-
 Other Rust dependencies and their licenses are recorded in Cargo.lock and their
 respective crates. This project itself remains MIT licensed.
 
+Optional NVIDIA CUDA builds use Candle's CUDA backend, candle-kernels and
+cudarc (MIT OR Apache-2.0), together with NVIDIA's CUDA redistributable
+libraries. The CPU package does not include these libraries. GPU packages
+include only the required DLL dependency closure and the unchanged NVIDIA
+license in `licenses/NVIDIA-CUDA-EULA.txt`; its pinned source is
+[licenses/NVIDIA-CUDA-12.8-EULA.txt](licenses/NVIDIA-CUDA-12.8-EULA.txt), taken
+from the official CUDA 12.8.90 cudart archive. NVIDIA display drivers are not
+redistributed by this project.
+
 The new 112-entry speech snapshot and source-qualified prose rules are
 project-authored. Research citations and implementation decisions, including
 which algorithms were not ported, are in `docs/inference-research-2026-11.md`.

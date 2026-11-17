@@ -40,6 +40,10 @@ Windows x64 실행 파일을 컴파일합니다. RTX 4070을 포함한 Ada GPU�
 전체 CUDA Toolkit, 컴파일러, Python, 사용하지 않는 NVIDIA 라이브러리나
 NVIDIA 디스플레이 드라이버는 포함하지 않습니다. 라이브러리 목록은
 `CUDA_RUNTIME_DLLS.txt`, NVIDIA 약관은 `licenses/NVIDIA-CUDA-EULA.txt`에 있습니다.
+약관 원문은 NVIDIA 공식 CUDA 12.8.90 cudart 배포 아카이브의 `LICENSE`를
+변경 없이 포함한 것입니다. 해당 아카이브 SHA-256은
+`8d566b5fe745c46842dc16945cf36686227536decd2302c372be86da37faca68`이며,
+[NVIDIA 공식 배포 메타데이터](https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json)에서 확인할 수 있습니다.
 
 ## 실행
 

@@ -250,12 +250,10 @@ fn stage(executables: &Path, toolkit: &Path, output: &Path) -> Result<()> {
     if libraries.is_empty() {
         return Err("No CUDA runtime imports found; refusing to label a CPU build as CUDA".into());
     }
-    // Require the installed toolkit's license rather than substituting a
-    // hand-written summary for NVIDIA's redistributable terms.
-    let eula = [toolkit.join("EULA.txt"), toolkit.join("doc/EULA.txt")]
-        .into_iter()
-        .find(|p| p.is_file())
-        .ok_or("Installed CUDA toolkit EULA.txt not found")?;
+    // The minimal Windows component installer omits EULA.txt. Embed NVIDIA's
+    // unchanged CUDA 12.8 license from the hash-verified official archive;
+    // packaging must not depend on optional SDK documentation components.
+    let eula = include_bytes!("../licenses/NVIDIA-CUDA-12.8-EULA.txt");
     fs::create_dir(output).map_err(|e| e.to_string())?;
     for executable in ["syousetu-gui.exe", "syousetu-translate.exe"] {
         copy(&executables.join(executable), &output.join(executable))?;
@@ -273,7 +271,7 @@ fn stage(executables: &Path, toolkit: &Path, output: &Path) -> Result<()> {
         copy(Path::new(name), &output.join(name))?;
     }
     copy(Path::new("docs/gpu-rtx40.md"), &output.join("README.md"))?;
-    copy(&eula, &output.join("licenses/NVIDIA-CUDA-EULA.txt"))?;
+    fs::write(output.join("licenses/NVIDIA-CUDA-EULA.txt"), eula).map_err(|e| e.to_string())?;
     fs::write(
         output.join("CUDA_RUNTIME_DLLS.txt"),
         format!("{}\n", libraries.into_iter().collect::<Vec<_>>().join("\n")),
