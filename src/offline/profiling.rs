@@ -1,6 +1,13 @@
 //! Opt-in diagnostic counters, excluded from production builds. Nested phase
 //! times overlap; they must not be added together as independent wall time.
 use serde::Serialize;
+mod activations;
+pub(crate) use activations::observe_relu;
+pub use activations::ActivationProfile;
+
+pub fn activation_snapshot() -> ActivationProfile {
+    activations::snapshot()
+}
 use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,

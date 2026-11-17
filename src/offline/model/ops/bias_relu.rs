@@ -38,6 +38,8 @@ impl CustomOp2 for BiasRelu {
                 .zip(result.chunks_mut(width))
                 .for_each(run);
         }
+        #[cfg(feature = "inference-profile")]
+        crate::offline::profiling::observe_relu(&result, width);
         Ok((CpuStorage::F32(result), xl.shape().clone()))
     }
 }

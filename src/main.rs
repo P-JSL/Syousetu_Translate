@@ -9,6 +9,12 @@ fn main() {
     {
         eprintln!("INFERENCE_PROFILE {profile}");
     }
+    #[cfg(feature = "inference-profile")]
+    if let Ok(profile) =
+        serde_json::to_string(&syousetu_translate::offline::profiling::activation_snapshot())
+    {
+        eprintln!("INFERENCE_ACTIVATIONS {profile}");
+    }
     if let Err(error) = result {
         eprintln!("ERROR: {error:#}");
         std::process::exit(1);
