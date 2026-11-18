@@ -1,6 +1,7 @@
 //! Conservative, source-qualified sentence-ending conversion. Unrecognized
 //! morphology stays unchanged; no gender/personality is inferred from names.
 use super::Utterance;
+use std::borrow::Cow;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Register {
@@ -9,8 +10,7 @@ enum Register {
     Casual,
     Polite,
 }
-fn classify(source: &str) -> Register {
-    let utterance = Utterance::parse(source);
+fn classify(utterance: Utterance<'_>, prohibitive: bool) -> Register {
     let text = utterance.inner;
     if [
         "ございます",
@@ -40,7 +40,7 @@ fn classify(source: &str) -> Register {
         if polite {
             return Register::Polite;
         }
-        if super::japanese::prohibitive(source) {
+        if prohibitive {
             return Register::Casual;
         }
         if [
@@ -72,6 +72,9 @@ fn classify(source: &str) -> Register {
                 "てる",
                 "てない",
                 "くれない",
+                "ないで",
+                "ありがとう",
+                "ごめん",
                 "いけないの",
                 "ならないの",
             ]
@@ -82,11 +85,19 @@ fn classify(source: &str) -> Register {
         }
         return Register::Keep;
     }
-    if polite || source.contains(['「', '」', '『', '』', '“', '”', '"']) {
+    if polite || super::alignment::contains_quote(text) {
         Register::Keep
     } else {
         Register::Narrative
     }
+}
+
+pub(super) fn contrasting_dialogue(first: Utterance<'_>, second: Utterance<'_>) -> bool {
+    let tone = |utterance| classify(utterance, super::japanese::prohibitive(utterance));
+    matches!(
+        (tone(first), tone(second)),
+        (Register::Polite, Register::Casual) | (Register::Casual, Register::Polite)
+    )
 }
 
 // Ending suffixes are ordered by specificity. These conversions preserve
@@ -109,6 +120,8 @@ const ENDINGS: &[(&str, &str, &str, &str)] = &[
     ("아닙니다", "아니다", "아니야", "아니에요"),
     ("그렇습니다", "그렇다", "그래", "그래요"),
     ("감사합니다", "감사한다", "고마워", "고마워요"),
+    ("감사해요", "감사한다", "고마워", "고마워요"),
+    ("고맙습니다", "고맙다", "고마워", "고마워요"),
     ("미안합니다", "미안하다", "미안해", "미안해요"),
     ("죄송합니다", "죄송하다", "죄송해", "죄송해요"),
     ("모릅니다", "모른다", "몰라", "몰라요"),
@@ -133,6 +146,32 @@ const ENDINGS: &[(&str, &str, &str, &str)] = &[
     ("옵니다", "온다", "와", "와요"),
     ("봅니다", "본다", "봐", "봐요"),
 ];
+
+pub(super) fn finite_dialogue(text: &str) -> bool {
+    let body = text.trim_end_matches(['.', '!', '?', '…', '。', '！', '？']);
+    ENDINGS.iter().any(|&(formal, plain, informal, polite)| {
+        [formal, plain, polite]
+            .iter()
+            .any(|ending| body.ends_with(ending))
+            || (informal.len() >= "괜찮아".len() && body.ends_with(informal))
+    }) || [
+        "거야",
+        "거예요",
+        "겠어요",
+        "같아",
+        "같아요",
+        "됐어",
+        "됐어요",
+        "지 마",
+        "지 마세요",
+        "지 마십시오",
+        "지 말라",
+        "지 말아라",
+        "지 않아",
+    ]
+    .iter()
+    .any(|ending| body.ends_with(ending))
+}
 fn noun_ending(stem: &str, register: Register) -> Option<&'static str> {
     if register == Register::Narrative {
         return Some("이다");
@@ -150,12 +189,12 @@ fn noun_ending(stem: &str, register: Register) -> Option<&'static str> {
         _ => return None,
     })
 }
-fn sentence(text: &str, register: Register, nominal: bool) -> String {
+fn sentence(text: &str, register: Register, nominal: bool) -> Option<String> {
     let trimmed = text.trim_end();
     if register == Register::Casual {
         for (previous, corrected) in [("안 되나요", "안 돼"), ("안되나요", "안돼")] {
             if let Some(stem) = trimmed.strip_suffix(previous) {
-                return format!("{stem}{corrected}{}", &text[trimmed.len()..]);
+                return Some(format!("{stem}{corrected}{}", &text[trimmed.len()..]));
             }
         }
     }
@@ -226,11 +265,11 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
                 } else if verb.iter().any(|word| stem.ends_with(word)) {
                     "한다"
                 } else {
-                    return text.to_owned();
+                    return None;
                 };
-                return format!("{stem}{ending}{}", &text[trimmed.len()..]);
+                return Some(format!("{stem}{ending}{}", &text[trimmed.len()..]));
             }
-            return format!(
+            return Some(format!(
                 "{stem}{}{}",
                 match register {
                     Register::Narrative => narrative,
@@ -239,7 +278,7 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
                     Register::Keep => old,
                 },
                 &text[trimmed.len()..]
-            );
+            ));
         }
     }
     if let Some(stem) = trimmed.strip_suffix("입니다") {
@@ -252,7 +291,11 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
             .then(|| noun_ending(stem, register))
             .flatten()
         {
-            return format!("{}{ending}{}", stem.trim_end(), &text[trimmed.len()..]);
+            return Some(format!(
+                "{}{ending}{}",
+                stem.trim_end(),
+                &text[trimmed.len()..]
+            ));
         }
     }
     // Only reviewed Korean endings are reused. In particular, do not strip
@@ -260,6 +303,7 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
     for &(formal, narrative, casual, polite) in ENDINGS {
         let forms = match register {
             Register::Casual if !matches!(formal, "갑니다" | "옵니다") => [polite, narrative],
+            Register::Polite if casual.len() >= "괜찮아".len() => [narrative, casual],
             Register::Polite => [narrative, narrative],
             _ => continue,
         };
@@ -270,7 +314,7 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
                 } else {
                     polite
                 };
-                return format!("{stem}{ending}{}", &text[trimmed.len()..]);
+                return Some(format!("{stem}{ending}{}", &text[trimmed.len()..]));
             }
         }
     }
@@ -283,7 +327,7 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
             } else {
                 "지 않아요"
             };
-            return format!("{stem}{ending}{}", &text[trimmed.len()..]);
+            return Some(format!("{stem}{ending}{}", &text[trimmed.len()..]));
         }
     }
     if register == Register::Casual {
@@ -292,24 +336,34 @@ fn sentence(text: &str, register: Register, nominal: bool) -> String {
                 ('가'..='힣').contains(&ch) && (ch as u32 - '가' as u32) % 28 == 20
             });
             if past {
-                return format!("{stem}어{}", &text[trimmed.len()..]);
+                return Some(format!("{stem}어{}", &text[trimmed.len()..]));
             }
         }
     }
-    text.to_owned()
+    None
 }
-pub(super) fn render(source: &str, target: &str) -> String {
-    let register = classify(source);
-    if register == Register::Keep || target.contains(['“', '”', '‘', '’', '「', '」', '『', '』'])
-    {
-        return target.to_owned();
+pub(super) fn render<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let prohibitive = super::japanese::prohibitive(utterance);
+    let register = classify(utterance, prohibitive);
+    render_tone(utterance, target, register, prohibitive, true)
+}
+
+fn render_tone<'a>(
+    utterance: Utterance<'_>,
+    target: &'a str,
+    register: Register,
+    prohibitive: bool,
+    first_phrase: bool,
+) -> Cow<'a, str> {
+    if register == Register::Keep || super::alignment::contains_quote(target) {
+        return Cow::Borrowed(target);
     }
-    let inner = Utterance::parse(source).inner;
-    let tail = inner.trim_end_matches(['。', '！', '？', '!', '?', '…', '.', 'よ', 'ね', 'か']);
+    let inner = utterance.inner;
+    let tail = inner.trim_end_matches(['。', '！', '？', '!', '?', '…', '.']);
     let nominal = ["です", "だ", "である", "だった", "でした"]
         .iter()
-        .any(|ending| tail.ends_with(ending));
-    let negative_request = super::japanese::prohibitive(source)
+        .any(|ending| tail.trim_end_matches(['よ', 'ね', 'か']).ends_with(ending));
+    let negative_request = prohibitive
         || [
             "ないで",
             "ないでね",
@@ -319,69 +373,93 @@ pub(super) fn render(source: &str, target: &str) -> String {
             "すんなよ",
         ]
         .iter()
-        .any(|ending| {
-            inner
-                .trim_end_matches(['。', '！', '？', '!', '?', '…', '.'])
-                .ends_with(ending)
-        });
-    let softened = if register == Register::Casual && negative_request {
-        Some(
-            target
-                .replace("지 말아라", "지 마")
-                .replace("지 말라", "지 마")
-                .replace("지 마세요", "지 마")
-                .replace("지 마십시오", "지 마"),
-        )
-    } else if register == Register::Polite && super::japanese::prohibitive(source) {
-        Some(
-            target
-                .replace("지 말아라", "지 마세요")
-                .replace("지 말라", "지 마세요"),
-        )
-    } else {
-        None
-    };
-    let target = softened.as_deref().unwrap_or(target);
-    // Only a source-explicit response at the beginning of a casual utterance
-    // qualifies. Do not globally replace Korean thanks or affirmative words.
-    let response = if register == Register::Casual {
-        [
+        .any(|ending| tail.ends_with(ending));
+    let body = target.trim_end_matches(['.', '!', '?', '…', '。', '！', '？']);
+    let marks = &target[body.len()..];
+    if negative_request {
+        let ending = match register {
+            Register::Casual => Some("지 마"),
+            Register::Polite => Some("지 마세요"),
+            _ => None,
+        };
+        if let Some(ending) = ending {
+            for previous in ["지 말아라", "지 말라", "지 마십시오", "지 마세요"] {
+                if previous == ending {
+                    continue;
+                }
+                if let Some(stem) = body.strip_suffix(previous) {
+                    return Cow::Owned(format!("{stem}{ending}{marks}"));
+                }
+            }
+        }
+    }
+
+    let mut text = Cow::Borrowed(body);
+    if first_phrase && register == Register::Casual {
+        for (source_prefix, previous, corrected) in [
             ("ありがとう、", "감사합니다,", "고마워,"),
             ("ありがとう、", "감사해요,", "고마워,"),
             ("うん、", "그렇습니다,", "응,"),
             ("うん、", "네,", "응,"),
-        ]
-        .iter()
-        .find_map(|(source_prefix, previous, corrected)| {
-            inner
-                .starts_with(source_prefix)
-                .then(|| {
-                    target
-                        .strip_prefix(previous)
-                        .map(|tail| format!("{corrected}{tail}"))
-                })
-                .flatten()
-        })
-    } else {
-        None
-    };
-    let target = response.as_deref().unwrap_or(target);
-    let mut result = String::with_capacity(target.len());
-    let mut start = 0;
-    for (index, ch) in target.char_indices() {
-        if matches!(ch, '.' | '!' | '?' | '…' | '。' | '！' | '？') {
-            result.push_str(&sentence(&target[start..index], register, nominal));
-            result.push(ch);
-            start = index + ch.len_utf8();
+        ] {
+            if inner.starts_with(source_prefix) {
+                if let Some(tail) = body.strip_prefix(previous) {
+                    text = Cow::Owned(format!("{corrected}{tail}"));
+                    break;
+                }
+            }
         }
     }
-    result.push_str(&sentence(&target[start..], register, nominal));
-    result
+    if let Some(mut corrected) = sentence(&text, register, nominal) {
+        corrected.push_str(marks);
+        Cow::Owned(corrected)
+    } else if let Cow::Owned(mut corrected) = text {
+        corrected.push_str(marks);
+        Cow::Owned(corrected)
+    } else {
+        Cow::Borrowed(target)
+    }
+}
+
+/// With no sentence correspondence, only apply a shared speech register.
+/// Individual source/target clauses are never paired by this path.
+pub(super) fn render_uniform<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let prohibitive = super::japanese::prohibitive(utterance);
+    let register = classify(utterance, prohibitive);
+    if register == Register::Keep
+        || !super::alignment::sentences(utterance.inner).all(|inner| {
+            let clause = Utterance { inner, ..utterance };
+            let tone = classify(clause, super::japanese::prohibitive(clause));
+            tone == register || (tone == Register::Keep && utterance.quotes.is_some())
+        })
+    {
+        return Cow::Borrowed(target);
+    }
+    if super::alignment::sentences(target).nth(1).is_none() {
+        return render_tone(utterance, target, register, prohibitive, true);
+    }
+    let mut output = String::with_capacity(target.len());
+    for (index, part) in super::alignment::sentences(target).enumerate() {
+        if !output.is_empty() {
+            output.push(' ');
+        }
+        output.push_str(&render_tone(
+            utterance,
+            part,
+            register,
+            prohibitive,
+            index == 0,
+        ));
+    }
+    Cow::Owned(output)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Utterance;
+    fn render<'a>(source: &str, target: &'a str) -> std::borrow::Cow<'a, str> {
+        super::render(Utterance::parse(source), target)
+    }
     #[test]
     fn narration_casual_dialogue_and_polite_dialogue_keep_distinct_registers() {
         assert_eq!(
@@ -462,10 +540,7 @@ mod tests {
         assert_eq!(render("「学生です」", "학생입니다."), "학생이에요.");
         assert_eq!(render("「医者です」", "의사입니다."), "의사예요.");
         assert_eq!(render("「友人なんだ」", "친구입니다."), "친구야.");
-        assert_eq!(
-            render("重さは1.5 kgだ。", "1.5 kg 입니다. 값은 3.14입니다."),
-            "1.5 kg이다. 값은 3.14이다."
-        );
+        assert_eq!(render("重さは1.5 kgだ。", "1.5 kg 입니다."), "1.5 kg이다.");
         assert_eq!(render("「てめえ」", "너를 찾습니다."), "너를 찾습니다.");
         assert_eq!(render("彼は幸せだ。", "그는 행복합니다."), "그는 행복하다.");
         assert_eq!(render("彼は考えた。", "그는 생각합니다."), "그는 생각한다.");

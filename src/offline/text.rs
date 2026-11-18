@@ -3,16 +3,15 @@ pub(super) fn japanese(text: &str) -> bool {
         .any(|c| matches!(c,'\u{3040}'..='\u{30ff}'|'\u{3400}'..='\u{9fff}'))
 }
 pub(super) fn split_boundary(text: &str) -> Option<usize> {
-    let positions = text.char_indices().collect::<Vec<_>>();
-    let mid = positions.len() / 2;
-    if positions.len() < 2 {
+    let length = text.chars().count();
+    if length < 2 {
         return None;
     }
-    positions
-        .iter()
+    let mid = length / 2;
+    text.char_indices()
         .enumerate()
-        .skip(1)
-        .filter(|(i, _)| *i >= mid / 2 && *i <= mid + mid / 2)
+        .take(mid + mid / 2 + 1)
+        .skip((mid / 2).max(1))
         .min_by_key(|(i, (_, c))| {
             (
                 if "。！？.!?\n".contains(*c) {
@@ -27,5 +26,5 @@ pub(super) fn split_boundary(text: &str) -> Option<usize> {
         })
         .map(|(_, (byte, c))| byte + c.len_utf8())
         .filter(|&byte| byte < text.len())
-        .or_else(|| positions.get(mid.max(1)).map(|(byte, _)| *byte))
+        .or_else(|| text.char_indices().nth(mid).map(|(byte, _)| byte))
 }

@@ -121,10 +121,18 @@ impl Memory {
             return None;
         }
         let utterance = crate::translation::prose::Utterance::parse(source);
-        let canonical = utterance.inner.replace('!', "！").replace('?', "？");
         let corrected = self
             .lookup(utterance.inner)
-            .or_else(|| self.lookup(&canonical))
+            .or_else(|| {
+                utterance
+                    .inner
+                    .contains(['!', '?'])
+                    .then(|| {
+                        let canonical = utterance.inner.replace('!', "！").replace('?', "？");
+                        self.lookup(&canonical)
+                    })
+                    .flatten()
+            })
             .or_else(|| {
                 (!utterance
                     .inner

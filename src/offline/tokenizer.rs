@@ -48,7 +48,13 @@ impl Tokenizer {
             .filter_map(|id| self.inverse.get(*id as usize).and_then(Option::as_ref))
             .map(String::as_str)
             .collect::<Vec<_>>();
-        Ok(self.sp.decode(&pieces)?.trim().to_owned())
+        let mut decoded = self.sp.decode(&pieces)?;
+        decoded.truncate(decoded.trim_end().len());
+        let leading = decoded.len() - decoded.trim_start().len();
+        if leading != 0 {
+            decoded.drain(..leading);
+        }
+        Ok(decoded)
     }
     pub(super) fn split(&self, text: &str) -> Result<Vec<EncodedText>> {
         let tokens = self.encode(&crate::translation::prose::japanese::expand(text))?;

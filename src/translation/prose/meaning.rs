@@ -1,8 +1,11 @@
 //! Small, source-qualified aspect and speech-act corrections. Never change an arbitrary
 //! Korean "아/어 봤다" (which may genuinely describe an experience).
+use super::Utterance;
 use std::borrow::Cow;
-pub(super) fn request<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
-    if !super::japanese::friendly_request(source)
+
+pub(super) fn request<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let source = utterance.inner;
+    if !super::japanese::friendly_request(utterance)
         || source.contains("ないで")
         || source.contains("なくて")
     {
@@ -27,8 +30,8 @@ pub(super) fn request<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(target)
 }
 
-pub(super) fn completion<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
-    let utterance = super::Utterance::parse(source);
+pub(super) fn completion<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let source = utterance.inner;
     if utterance.quotes.is_none()
         || source.contains("てみ")
         || source.contains("でみ")
@@ -69,8 +72,7 @@ pub(super) fn completion<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(target)
 }
 
-pub(super) fn formal_apology<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
-    let utterance = super::Utterance::parse(source);
+pub(super) fn formal_apology<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
     let source = utterance
         .inner
         .trim_end_matches(['。', '！', '!', '…', '.']);
@@ -97,7 +99,19 @@ pub(super) fn formal_apology<'a>(source: &str, target: &'a str) -> Cow<'a, str> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Cow, Utterance};
+
+    fn completion<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
+        super::completion(Utterance::parse(source), target)
+    }
+
+    fn formal_apology<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
+        super::formal_apology(Utterance::parse(source), target)
+    }
+
+    fn request<'a>(source: &str, target: &'a str) -> Cow<'a, str> {
+        super::request(Utterance::parse(source), target)
+    }
     #[test]
     fn completion_is_not_mistaken_for_an_experience_or_applied_without_source_evidence() {
         assert_eq!(

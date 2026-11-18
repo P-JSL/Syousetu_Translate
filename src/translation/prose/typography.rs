@@ -1,6 +1,31 @@
-use super::Utterance;
+use super::{alignment, Utterance};
+use std::borrow::Cow;
 
-fn squeeze(text: &str) -> String {
+fn opening(ch: char) -> bool {
+    matches!(ch, '(' | '[' | '“' | '‘' | '「' | '『')
+}
+
+fn closing(ch: char) -> bool {
+    matches!(
+        ch,
+        '.' | ',' | '!' | '?' | '。' | '、' | '！' | '？' | ')' | ']' | '”' | '’' | '」' | '』'
+    )
+}
+
+fn squeeze(text: &str) -> Cow<'_, str> {
+    let text = text.trim();
+    let mut previous = None;
+    if text.chars().all(|ch| {
+        let regular = if ch.is_whitespace() {
+            ch == ' ' && previous.is_some_and(|ch| ch != ' ' && !opening(ch))
+        } else {
+            previous != Some(' ') || !closing(ch)
+        };
+        previous = Some(ch);
+        regular
+    }) {
+        return Cow::Borrowed(text);
+    }
     let mut output = String::with_capacity(text.len());
     let mut pending = false;
     for ch in text.chars() {
@@ -8,31 +33,13 @@ fn squeeze(text: &str) -> String {
             pending = !output.is_empty();
             continue;
         }
-        if pending
-            && !matches!(
-                ch,
-                '.' | ','
-                    | '!'
-                    | '?'
-                    | '。'
-                    | '、'
-                    | '！'
-                    | '？'
-                    | ')'
-                    | ']'
-                    | '”'
-                    | '’'
-                    | '」'
-                    | '』'
-            )
-            && !output.ends_with(['(', '[', '“', '‘', '「', '『'])
-        {
+        if pending && !closing(ch) && !output.chars().next_back().is_some_and(opening) {
             output.push(' ');
         }
         pending = false;
         output.push(ch);
     }
-    output
+    Cow::Owned(output)
 }
 fn unwrap_target(text: &str) -> &str {
     for (open, close) in [
@@ -79,10 +86,20 @@ fn unwrap_target(text: &str) -> &str {
 fn remove_unmatched_opening<'a>(utterance: Utterance<'_>, mut text: &'a str) -> &'a str {
     // A source with an explicit nested quotation owns that boundary. Do not
     // mistake it for a model-generated extra opening quote.
-    if utterance.inner.starts_with(['「', '『', '“', '‘', '"']) {
+    if utterance
+        .inner
+        .starts_with(['「', '『', '“', '‘', '"', '(', '（'])
+    {
         return text;
     }
-    for (open, close) in [('“', '”'), ('‘', '’'), ('「', '」'), ('『', '』')] {
+    for (open, close) in [
+        ('“', '”'),
+        ('‘', '’'),
+        ('「', '」'),
+        ('『', '』'),
+        ('(', ')'),
+        ('（', '）'),
+    ] {
         let excess = text
             .matches(open)
             .count()
@@ -96,53 +113,133 @@ fn remove_unmatched_opening<'a>(utterance: Utterance<'_>, mut text: &'a str) -> 
     }
     text
 }
-fn marks(text: &str) -> String {
-    text.replace("...", "…")
-        .replace('！', "!")
-        .replace('？', "?")
+fn marks(text: &str) -> Cow<'_, str> {
+    if text.contains("...") || text.contains(['！', '？']) {
+        Cow::Owned(
+            text.replace("...", "…")
+                .replace('！', "!")
+                .replace('？', "?"),
+        )
+    } else {
+        Cow::Borrowed(text)
+    }
 }
+
+fn restore_marks<'a>(inner: &str, mut text: Cow<'a, str>) -> Cow<'a, str> {
+    let prefix_start = inner.trim_start_matches(['…', '.']);
+    let prefix = &inner[..inner.len() - prefix_start.len()];
+    if prefix.contains('…') || prefix.len() >= 3 {
+        let prefix = marks(prefix);
+        let body = text.trim_start_matches(['…', '.']).trim_start();
+        if text.strip_prefix(prefix.as_ref()) != Some(body) {
+            text = Cow::Owned(format!("{prefix}{body}"));
+        }
+    }
+    let body = inner.trim_end_matches(['!', '?', '！', '？', '…', '.']);
+    let terminal = &inner[body.len()..];
+    if terminal.contains(['!', '?', '！', '？', '…']) || terminal.len() >= 3 {
+        let terminal = marks(terminal);
+        let body = text
+            .trim_end_matches(['.', '!', '?', '。', '！', '？', '…'])
+            .trim_end();
+        if text.strip_suffix(terminal.as_ref()) != Some(body) {
+            text = Cow::Owned(format!("{body}{terminal}"));
+        }
+    }
+    text
+}
+
+fn render_leaf<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let mut text = Cow::Borrowed(target);
+    for edit in [
+        super::meaning::completion,
+        super::meaning::request,
+        super::meaning::formal_apology,
+        super::register::render,
+        super::modality::repair,
+    ] {
+        if let Cow::Owned(edited) = edit(utterance, &text) {
+            text = Cow::Owned(edited);
+        }
+    }
+    if let Some(edited) = super::address::restore(utterance, &text) {
+        text = Cow::Owned(edited);
+    }
+    if let Some(edited) = super::relations::restore(utterance, &text) {
+        text = Cow::Owned(edited);
+    }
+    restore_marks(utterance.inner, text)
+}
+
+fn render_scope<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
+    let source = utterance.inner;
+    if alignment::contains_quote(source) || alignment::contains_quote(target) {
+        return restore_marks(source, Cow::Borrowed(target));
+    }
+    if alignment::sentences(source).nth(1).is_none()
+        && alignment::sentences(target).nth(1).is_none()
+    {
+        return render_leaf(utterance, target);
+    }
+    if !alignment::aligned_sentences(source, target) {
+        if let Some([(first, left), (second, right)]) =
+            alignment::merged_dialogue(utterance, target)
+        {
+            let left = render_leaf(first, left);
+            let right = render_leaf(second, right);
+            let stop = if left.ends_with(['?', '!', '.', '…', '。']) {
+                ""
+            } else {
+                "."
+            };
+            return Cow::Owned(format!("{left}{stop} {right}"));
+        }
+        return restore_marks(source, super::register::render_uniform(utterance, target));
+    }
+    let mut result = String::with_capacity(target.len());
+    for (source, target) in alignment::sentences(source).zip(alignment::sentences(target)) {
+        let clause = Utterance {
+            inner: source,
+            ..utterance
+        };
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        result.push_str(&render_leaf(clause, target));
+    }
+    Cow::Owned(result)
+}
+
 pub fn finish(source: &str, generated: &str) -> String {
     let utterance = Utterance::parse(source);
     let squeezed = squeeze(generated);
-    let text = if utterance.quotes.is_some() {
-        remove_unmatched_opening(utterance, unwrap_target(&squeezed)).to_owned()
-    } else {
-        squeezed
-    };
-    let text = super::meaning::completion(source, &text);
-    let text = super::meaning::request(source, &text);
-    let text = super::meaning::formal_apology(source, &text);
-    let mut text = super::register::render(source, &text);
-    text = super::address::restore(utterance, &text).unwrap_or(text);
-    text = super::relations::restore(utterance, &text).unwrap_or(text);
-    let inner = utterance.inner;
-    let prefix = inner
-        .chars()
-        .take_while(|ch| matches!(ch, '…' | '.'))
-        .collect::<String>();
-    if prefix.contains('…') || prefix.len() >= 3 {
-        let rest = text.trim_start_matches(['…', '.']).trim_start();
-        text = format!("{}{rest}", marks(&prefix));
+    if utterance.quotes.is_some() {
+        let body = remove_unmatched_opening(utterance, unwrap_target(&squeezed));
+        return utterance.frame(&render_scope(utterance, body));
     }
-    let terminal = inner
-        .chars()
-        .rev()
-        .take_while(|ch| matches!(ch, '!' | '?' | '！' | '？' | '…' | '.'))
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect::<String>();
-    if terminal
-        .chars()
-        .any(|ch| matches!(ch, '!' | '?' | '！' | '？' | '…'))
-        || terminal.len() >= 3
-    {
-        let rest = text
-            .trim_end_matches(['.', '!', '?', '。', '！', '？', '…'])
-            .trim_end();
-        text = format!("{rest}{}", marks(&terminal));
+    if let Some((clause, span)) = alignment::embedded(utterance.inner, &squeezed) {
+        if let Cow::Owned(edited) = render_scope(clause, &squeezed[span.clone()]) {
+            let close_width = squeezed[span.end..]
+                .chars()
+                .next()
+                .map_or(0, char::len_utf8);
+            let direct_particle = squeezed[span.end + close_width..].starts_with("고 ")
+                && squeezed[span.clone()].ends_with(['다', '라'])
+                && !edited.ends_with(['다', '라']);
+            let particle = span.start + edited.len() + close_width;
+            let mut output = squeezed.into_owned();
+            output.replace_range(span, &edited);
+            if direct_particle {
+                output.insert(particle, '라');
+            }
+            return output;
+        }
+        return squeezed.into_owned();
     }
-    utterance.frame(&text)
+    match render_scope(utterance, &squeezed) {
+        Cow::Owned(edited) => edited,
+        Cow::Borrowed(_) => squeezed.into_owned(),
+    }
 }
 
 #[cfg(test)]

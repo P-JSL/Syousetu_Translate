@@ -1,12 +1,13 @@
 //! Expand only reviewed contractions with unambiguous morphology. The original
 //! source remains available for register, pauses, quoted output and corrections.
+use super::Utterance;
 use std::{borrow::Cow, sync::LazyLock};
 mod intent;
 mod prohibition;
-pub(super) fn prohibitive(source: &str) -> bool {
+pub(super) fn prohibitive(source: Utterance<'_>) -> bool {
     prohibition::matches(source)
 }
-pub(super) fn friendly_request(source: &str) -> bool {
+pub(super) fn friendly_request(source: Utterance<'_>) -> bool {
     intent::request_stem(source).is_some()
 }
 const RULES: &[(&str, &str)] = &[
@@ -136,13 +137,19 @@ pub fn expand(source: &str) -> Cow<'_, str> {
             .build(RULES.iter().map(|(old, _)| old))
             .expect("static reviewed contractions")
     });
-    if !MATCHER.is_match(source) {
+    let mut matches = MATCHER.find_iter(source);
+    let Some(first) = matches.next() else {
         return intent::canonicalize(Cow::Borrowed(source));
+    };
+    let mut output = String::with_capacity(source.len());
+    let mut last = 0;
+    for matched in std::iter::once(first).chain(matches) {
+        output.push_str(&source[last..matched.start()]);
+        output.push_str(RULES[matched.pattern().as_usize()].1);
+        last = matched.end();
     }
-    intent::canonicalize(Cow::Owned(MATCHER.replace_all(
-        source,
-        &RULES.iter().map(|(_, new)| *new).collect::<Vec<_>>(),
-    )))
+    output.push_str(&source[last..]);
+    intent::canonicalize(Cow::Owned(output))
 }
 #[cfg(test)]
 mod tests {

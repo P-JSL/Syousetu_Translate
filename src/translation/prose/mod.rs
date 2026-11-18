@@ -1,50 +1,49 @@
 //! Source-aware typography. It preserves words, units and speech register.
 mod address;
+mod alignment;
 pub mod japanese;
 mod meaning;
+mod modality;
 mod register;
 mod relations;
 mod typography;
+use std::borrow::Cow;
 pub use typography::finish;
 
 /// Process matching source/output lines without guessing a new paragraph map.
 pub fn finish_lines(source: &str, generated: &str) -> String {
-    fn line(source: &str, generated: &str) -> String {
+    fn line<'a>(source: &str, generated: &'a str) -> Cow<'a, str> {
         if source
             .chars()
             .any(|ch| matches!(ch, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{9fff}'))
             && generated.chars().any(|ch| ('가'..='힣').contains(&ch))
         {
-            finish(source, generated)
+            Cow::Owned(finish(source, generated))
         } else {
-            generated.to_owned()
+            Cow::Borrowed(generated)
         }
     }
     if !source.contains('\n') {
-        return line(source, generated);
+        return line(source, generated).into_owned();
     }
-    let source = source.split('\n').collect::<Vec<_>>();
-    let target = generated.split('\n').collect::<Vec<_>>();
-    if source.len() != target.len()
-        || source
-            .iter()
-            .zip(&target)
-            .any(|(source, target)| source.trim().is_empty() != target.trim().is_empty())
+    let pairs = || source.split('\n').zip(generated.split('\n'));
+    if source.split('\n').count() != generated.split('\n').count()
+        || pairs().any(|(source, target)| source.trim().is_empty() != target.trim().is_empty())
     {
         return generated.to_owned();
     }
-    source
-        .iter()
-        .zip(target)
-        .map(|(source, target)| {
-            if let Some(content) = target.strip_suffix('\r') {
-                format!("{}\r", line(source, content))
-            } else {
-                line(source, target)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut output = String::with_capacity(generated.len());
+    for (index, (source, target)) in pairs().enumerate() {
+        if index != 0 {
+            output.push('\n');
+        }
+        let content = target.strip_suffix('\r').unwrap_or(target);
+        output.push_str(&line(source, content));
+        if content.len() != target.len() {
+            output.push('\r');
+        }
+    }
+    output
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,6 +52,10 @@ pub struct Utterance<'a> {
     pub quotes: Option<(char, char)>,
 }
 impl<'a> Utterance<'a> {
+    pub(super) fn is_dialogue(self) -> bool {
+        matches!(self.quotes, Some(('“', '”') | ('‘', '’')))
+    }
+
     pub fn parse(source: &'a str) -> Self {
         let source = source.trim();
         for (open, close, target) in [

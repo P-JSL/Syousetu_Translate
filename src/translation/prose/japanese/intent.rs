@@ -43,10 +43,8 @@ const VERBS: &[(&str, &str)] = &[
     ("し", "する"),
     ("来", "来る"),
 ];
-pub(super) fn request_stem(source: &str) -> Option<&str> {
-    let utterance = Utterance::parse(source);
-    if !source.trim().starts_with(['「', '『'])
-        || utterance.quotes.is_none()
+pub(super) fn request_stem(utterance: Utterance<'_>) -> Option<&str> {
+    if !utterance.is_dialogue()
         || ["は", "が", "なぜ", "どうして", "くれないのは"]
             .iter()
             .any(|part| utterance.inner.contains(part))
@@ -109,7 +107,7 @@ pub(super) fn canonicalize(source: Cow<'_, str>) -> Cow<'_, str> {
     }
     // A pure quotation ending in Vて/で + くれない？ can be a friendly
     // request. Do not reinterpret a stated third-person refusal as a request.
-    if let Some(stem) = request_stem(&output) {
+    if let Some(stem) = request_stem(Utterance::parse(&output)) {
         let open = output.trim().chars().next().unwrap();
         let close = output.trim().chars().next_back().unwrap();
         return Cow::Owned(format!("{open}{stem}ください。{close}"));

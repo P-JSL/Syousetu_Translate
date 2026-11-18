@@ -3,7 +3,7 @@
 #![cfg(feature = "offline-model")]
 use syousetu_translate::{
     learning::Memory,
-    offline::{OfflineTranslator, ParallelPolicy},
+    offline::{InferenceDevice, OfflineTranslator, ParallelPolicy},
 };
 #[test]
 #[ignore = "requires the pinned local model; no network or bundled corrections"]
@@ -82,4 +82,44 @@ fn explicit_prohibitions_do_not_become_permission_or_a_double_negative() {
         "{}",
         output[2]
     );
+}
+
+#[test]
+#[ignore = "requires the pinned local model; tests dynamically aligned model output"]
+fn explicit_speech_acts_and_mixed_register_survive_inference() {
+    let sources = [
+        "「今は大丈夫です。次は私がやるよ。」",
+        "「今日はその本を読まなくてもいいよ。」",
+        "「もう中に入ってもいいですか？」",
+        "「この水を飲まなきゃだめです。」",
+        "「いいえ、まだ中に入っちゃダメです。」",
+        "「灯りを消さないでよ」と、彼女は小さな声で言った。",
+    ]
+    .map(str::to_owned);
+    let model_dir = syousetu_translate::models::default_dir();
+    let open = |workers, policy| {
+        OfflineTranslator::builder(&model_dir)
+            .memory(Memory::default())
+            .workers(workers)
+            .parallel_policy(policy)
+            .device(InferenceDevice::Cpu)
+            .build()
+            .unwrap()
+    };
+    let mut engine = open(32, ParallelPolicy::Parallel);
+    let outputs = engine.translate_lines(&sources).unwrap();
+    for (output, required) in outputs.iter().zip([
+        "괜찮아요.",
+        "읽지 않아도 돼",
+        "들어가도 될까요?",
+        "마셔야 해요",
+        "들어가지 마세요",
+        "끄지 마”라고",
+    ]) {
+        assert!(output.contains(required), "{required}: {output}");
+    }
+    assert!(!outputs[4].contains("안 들어가지"), "{}", outputs[4]);
+    drop(engine);
+    let mut sequential = open(1, ParallelPolicy::Serial);
+    assert_eq!(sequential.translate_lines(&sources).unwrap(), outputs);
 }

@@ -59,15 +59,12 @@ struct Prohibition<'a> {
     ending: &'static str,
     marks: &'a str,
 }
-fn parse(source: &str) -> Option<Prohibition<'_>> {
-    let source = source.trim();
-    let (open, close) = match source.chars().next()? {
-        '「' if source.ends_with('」') => ('「', '」'),
-        '『' if source.ends_with('』') => ('『', '』'),
+fn parse(utterance: Utterance<'_>) -> Option<Prohibition<'_>> {
+    let (open, close) = match utterance.quotes? {
+        ('“', '”') => ('「', '」'),
+        ('‘', '’') => ('『', '』'),
         _ => return None,
     };
-    let utterance = Utterance::parse(source);
-    utterance.quotes?;
     let inner = utterance.inner;
     let core = inner.trim_end_matches(['。', '！', '？', '!', '?', '…', '.']);
     let marks = &inner[core.len()..];
@@ -108,11 +105,11 @@ fn parse(source: &str) -> Option<Prohibition<'_>> {
     }
     None
 }
-pub(super) fn matches(source: &str) -> bool {
+pub(super) fn matches(source: Utterance<'_>) -> bool {
     parse(source).is_some()
 }
 pub(super) fn expand(source: &str) -> Option<String> {
-    let parsed = parse(source)?;
+    let parsed = parse(Utterance::parse(source))?;
     let action = match parsed.action.command {
         Some(command) => command.to_owned(),
         None => format!("{}{}", parsed.action.connective, parsed.ending),
@@ -173,7 +170,7 @@ mod tests {
             "「水を飲んじゃったよ。」",
             "「一」と「飲んじゃだめ」",
         ] {
-            assert!(!matches(source), "{source}");
+            assert!(!matches(Utterance::parse(source)), "{source}");
             assert!(expand(source).is_none());
         }
     }
