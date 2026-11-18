@@ -4,8 +4,7 @@
 
 작품 URL 입력 → 목차 확인 → 회차·저장 위치 선택 → 번역 실행까지 Windows GUI에서 처리할 수 있습니다. 기본 번역 엔진은 CPU에서 실행되는 **SMaLL-100 INT8**이며, 일본어를 영어 경유 없이 한국어로 직접 번역합니다.
 
-- **현재 릴리스:** [v0.3.5](https://github.com/P-JSL/Syousetu_Translate/releases/tag/v0.3.5)
-- **최신 버전:** [GitHub Releases](https://github.com/P-JSL/Syousetu_Translate/releases/latest)
+- **최신 릴리스:** [GitHub Releases](https://github.com/P-JSL/Syousetu_Translate/releases/latest)
 - **지원:** Windows 10/11 x64 휴대용 배포판 · Rust CLI 및 Linux GUI 소스 빌드
 - **필요하지 않은 것:** Java/JRE, Python, GPU, ezTrans XP, 외부 유료 번역 API
 
@@ -16,7 +15,7 @@
 ### Windows 10/11 (64비트)
 
 1. [최신 릴리스](https://github.com/P-JSL/Syousetu_Translate/releases/latest)를 엽니다.
-2. `SyousetuTranslate-Web-*-Windows-x64.zip` 파일을 다운로드합니다. v0.3.5의 정확한 파일명은 `SyousetuTranslate-Web-v0.3.5-Windows-x64.zip`입니다.
+2. `SyousetuTranslate-Web-*-Windows-x64.zip` 파일을 다운로드합니다.
 3. ZIP **전체를 원하는 폴더에 압축 해제**합니다. ZIP 내부에서 BAT만 실행하지 마세요.
 4. **`웹소설 번역기.bat`**을 더블클릭합니다.
 5. 프로그램 상단의 **웹소설**, **설정**, **교정 기억** 탭을 사용합니다.
