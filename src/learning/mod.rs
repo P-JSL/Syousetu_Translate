@@ -146,14 +146,19 @@ impl Memory {
             Some(Cow::Borrowed(corrected))
         }
     }
+    pub(crate) fn matching_terms<'a>(
+        &'a self,
+        source: &'a str,
+        translated: &'a str,
+    ) -> impl Iterator<Item = &'a Term> {
+        self.terms.iter().filter(move |term| {
+            source.contains(&term.source) && translated.contains(&term.previous)
+        })
+    }
     /// Only terms present in the Japanese source qualify. Replacements run in
     /// one pass, preventing one correction from being fed into another rule.
     pub fn post_edit(&self, source: &str, translated: &str) -> Result<String> {
-        let terms = self
-            .terms
-            .iter()
-            .filter(|t| source.contains(&t.source) && translated.contains(&t.previous))
-            .collect::<Vec<_>>();
+        let terms = self.matching_terms(source, translated).collect::<Vec<_>>();
         if terms.is_empty() {
             return Ok(translated.to_owned());
         }

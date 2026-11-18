@@ -1,3 +1,5 @@
+pub(super) const REVIEW_MARKER: &str = "[검수 필요]";
+
 pub(super) fn japanese(text: &str) -> bool {
     text.chars()
         .any(|c| matches!(c,'\u{3040}'..='\u{30ff}'|'\u{3400}'..='\u{9fff}'))

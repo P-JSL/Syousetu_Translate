@@ -152,6 +152,7 @@ fn restore_marks<'a>(inner: &str, mut text: Cow<'a, str>) -> Cow<'a, str> {
 fn render_leaf<'a>(utterance: Utterance<'_>, target: &'a str) -> Cow<'a, str> {
     let mut text = Cow::Borrowed(target);
     for edit in [
+        super::utterances::repair,
         super::meaning::completion,
         super::meaning::request,
         super::meaning::formal_apology,
@@ -306,6 +307,25 @@ mod tests {
         assert_eq!(
             finish("「もう食べちゃったんだよ……」", "그럼 이제 다 먹어봤어요..."),
             "“그럼 이제 다 먹어버렸어……”"
+        );
+    }
+
+    #[test]
+    fn explicit_casual_inner_voice_does_not_switch_to_formal_narration() {
+        assert_eq!(
+            finish(
+                "この間は楽しかったぜ。まだ覚えてるんだよな。",
+                "지난번은 즐거웠습니다. 아직 기억합니다."
+            ),
+            "지난번은 즐거웠어. 아직 기억해."
+        );
+        assert_eq!(
+            finish("明日まで待つんだよな。", "내일까지 기다립니다."),
+            "내일까지 기다려."
+        );
+        assert_eq!(
+            finish("明日まで待つ。", "내일까지 기다렸습니다."),
+            "내일까지 기다렸다."
         );
     }
 }

@@ -56,13 +56,18 @@ impl Tokenizer {
         }
         Ok(decoded)
     }
+    pub(super) fn encode_prose(&self, text: &str) -> Result<Vec<u32>> {
+        use crate::translation::prose::{game_terms, japanese};
+        let expanded = japanese::expand(text);
+        self.encode(&game_terms::expand(&expanded))
+    }
+    pub(super) fn encode_part(&self, text: String) -> Result<Option<EncodedText>> {
+        let tokens = self.encode_prose(&text)?;
+        Ok((tokens.len() <= MAX_SOURCE_TOKENS).then_some(EncodedText { text, tokens }))
+    }
     pub(super) fn split(&self, text: &str) -> Result<Vec<EncodedText>> {
-        let tokens = self.encode(&crate::translation::prose::japanese::expand(text))?;
-        if tokens.len() <= MAX_SOURCE_TOKENS {
-            return Ok(vec![EncodedText {
-                text: text.to_owned(),
-                tokens,
-            }]);
+        if let Some(encoded) = self.encode_part(text.to_owned())? {
+            return Ok(vec![encoded]);
         }
         let boundary =
             split_boundary(text).context("모델 입력 한도에 맞게 원문을 분할할 수 없습니다")?;

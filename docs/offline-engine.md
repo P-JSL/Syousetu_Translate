@@ -140,11 +140,20 @@ The tokenizer uses the model's SentencePiece BPE and shared vocabulary ids. The
 target Korean prefix is `128052`; decoding begins with EOS, as in SMaLL-100.
 Inference uses pre-normalized encoder/decoder layers, offset sinusoidal positions,
 shared Q8_0 embeddings/output head, greedy decoding, special-token suppression
-and repeated-trigram blocking. Long input is split at Unicode-safe boundaries,
-preferring punctuation. A generation length failure retries smaller source
-segments with a bounded recursion depth. Input is never silently truncated to
-the model limit; unrecoverable generation fails and preserves the already
-written contiguous prefix without inserting an untranslated replacement.
+and repeated-trigram blocking. The first translation uses the surrounding
+sentences in each paragraph. If the Korean result is shorter and has fewer
+sentence boundaries, clearly separated source sentences are retried and joined
+in the original paragraph. An outer quotation is restored around the paragraph,
+and punctuation within nested brackets stays with its sentence. Long input is
+split at Unicode-safe boundaries. A generation
+length failure retries smaller source segments with a bounded recursion depth.
+If those retries fail or a segment produces an unusable result, the output keeps
+that source segment with `[검수 필요]` and skips caching that result. Unexpected
+execution errors end the job and preserve the written prefix.
+
+Post-processing checks explicitly anchored quantities and RPG job names against
+the source. When the alignment is unambiguous, it fixes the changed value or name
+and keeps the surrounding Korean text. User corrections take precedence.
 
 Q8 conversion and decoding guards can change results relative to the original
 floating-point, five-beam model. This small multilingual model can mistranslate

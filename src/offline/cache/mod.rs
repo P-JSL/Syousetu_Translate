@@ -21,6 +21,7 @@ pub(super) fn valid(source: &str, target: &str) -> bool {
         && target.len() <= 8192
         && !source.contains('\0')
         && !target.contains('\0')
+        && !target.contains(super::text::REVIEW_MARKER)
 }
 pub(super) fn cost(source: &str, target: &str) -> usize {
     source.len() + target.len() + 128

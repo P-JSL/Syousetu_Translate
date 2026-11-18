@@ -1,10 +1,13 @@
 pub(super) mod batched;
+mod coverage;
 pub(super) mod generation;
+mod preparation;
 use crate::learning::Memory;
 use anyhow::Result;
 use std::sync::Arc;
 
-use super::{model, text::japanese, tokenizer::Tokenizer};
+use super::{model, tokenizer::Tokenizer};
+use preparation::{Piece, Prepared};
 pub(super) struct Runner {
     model: model::Model,
     config: model::Config,
@@ -19,34 +22,45 @@ impl Runner {
         pool.install(|| self.translate_inner(source))
     }
     pub(super) fn translate_inner(&mut self, source: &str) -> Result<String> {
-        if let Some(text) = self.memory.resolve(source) {
-            return Ok(text.into_owned());
-        }
-        if !japanese(source) {
-            return Ok(source.to_owned());
-        }
-        let mut lines = Vec::new();
-        for line in source.split('\n') {
-            if let Some(text) = self.memory.resolve(line) {
-                lines.push(text.into_owned());
-                continue;
-            }
-            if !japanese(line) {
-                lines.push(line.to_owned());
-                continue;
-            }
-            let mut translated = Vec::new();
-            for part in self.tokenizer.split(line)? {
-                if let Some(text) = self.memory.resolve(&part.text) {
-                    translated.push(text.into_owned());
-                    continue;
+        let mut output = String::new();
+        let mut pieces = self.prepare(source)?;
+        while let Some(piece) = pieces.pop_front() {
+            match piece {
+                Piece::Literal(text) => output.push_str(&text),
+                Piece::Generate(part) => {
+                    let result = self.generate(&part.encoded.text, &part.encoded.tokens);
+                    if let Some(mut retry) = self.sentence_retry(&part, &result)? {
+                        retry.append(&mut pieces);
+                        pieces = retry;
+                    } else {
+                        output.push_str(&self.complete(&part, result)?);
+                    }
                 }
-                let korean = self.generate(&part.text, &part.tokens)?;
-                translated.push(self.memory.post_edit(&part.text, &korean)?);
             }
-            lines.push(translated.join(" "));
         }
-        Ok(lines.join("\n"))
+        Ok(output)
+    }
+
+    fn complete(&self, part: &Prepared, result: Result<String>) -> Result<String> {
+        let source = &part.encoded.text;
+        let korean = match result {
+            Ok(korean) => {
+                let user_edit = self.memory.matching_terms(source, &korean).next().is_some();
+                if user_edit {
+                    self.memory.post_edit(source, &korean)?
+                } else {
+                    crate::translation::prose::restore_facts(source, korean)
+                }
+            }
+            Err(error) if generation::incomplete(&error) => {
+                let utterance = crate::translation::prose::Utterance::parse(source);
+                coverage::recover_known_phrase(utterance).unwrap_or_else(|| {
+                    utterance.frame(&coverage::preserve_for_review(utterance.inner))
+                })
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(part.render(korean))
     }
 
     pub(super) fn new(

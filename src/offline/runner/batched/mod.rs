@@ -10,7 +10,7 @@ use crate::offline::{
     model::{DecodeRows, Model},
     ordered,
 };
-use anyhow::{bail, Result};
+use anyhow::Result;
 use plan::{Cursor, State};
 
 pub(in crate::offline) fn translate(
@@ -101,9 +101,10 @@ fn run(
                 .iter()
                 .map(|&slot| {
                     let part = cursors[slot].as_ref().unwrap().part.as_ref().unwrap();
-                    let mut source = Vec::with_capacity(part.encoded.tokens.len() + 2);
+                    let tokens = &part.prepared.encoded.tokens;
+                    let mut source = Vec::with_capacity(tokens.len() + 2);
                     source.push(runners[slot].tokenizer.ko);
-                    source.extend_from_slice(&part.encoded.tokens);
+                    source.extend_from_slice(tokens);
                     source.push(runners[slot].config.eos_token_id);
                     source
                 })
@@ -111,7 +112,7 @@ fn run(
             let encoded = pool.install(|| runners[0].model.encode_many(&sources))?;
             for (slot, encoder) in missing.into_iter().zip(encoded) {
                 let part = cursors[slot].as_mut().unwrap().part.as_mut().unwrap();
-                let limit = (part.encoded.tokens.len() * 4 + 32)
+                let limit = (part.prepared.encoded.tokens.len() * 4 + 32)
                     .clamp(64, MAX_GENERATED_TOKENS)
                     .min(runners[slot].config.max_position_embeddings - 2);
                 part.state = Some(State {
@@ -187,31 +188,26 @@ fn run(
             let state = part.state.as_mut().unwrap();
             let next = scores[row];
             state.past += 1;
-            let completed =
-                if next == runner.config.eos_token_id {
-                    let decoded = runner.tokenizer.decode(&state.output)?;
-                    if decoded.is_empty() && part.encoded.text.chars().any(char::is_alphabetic) {
-                        bail!("모델이 빈 번역을 생성했습니다");
-                    }
-                    Some(crate::translation::prose::finish(
-                        &part.encoded.text,
-                        &decoded,
-                    ))
+            let source = &part.prepared.encoded.text;
+            let completed = if next == runner.config.eos_token_id {
+                Some(runner.finish_decoded(source, &state.output))
+            } else {
+                state.output.push(next);
+                state.input = next;
+                if state.output.len() == state.limit {
+                    Some(pool.install(|| runner.recover_after_limit(source, state.limit)))
                 } else {
-                    state.output.push(next);
-                    state.input = next;
-                    if state.output.len() == state.limit {
-                        Some(pool.install(|| {
-                            runner.recover_after_limit(&part.encoded.text, state.limit)
-                        })?)
-                    } else {
-                        None
-                    }
-                };
-            if let Some(korean) = completed {
-                cursor
-                    .output
-                    .push_str(&runner.memory.post_edit(&part.encoded.text, &korean)?);
+                    None
+                }
+            };
+            if let Some(result) = completed {
+                if let Some(retry) = runner.sentence_retry(&part.prepared, &result)? {
+                    cursor.prepend(retry);
+                } else {
+                    cursor
+                        .output
+                        .push_str(&runner.complete(&part.prepared, result)?);
+                }
                 cursor.part = None;
                 runner.model.reset();
             }

@@ -86,10 +86,24 @@ fn classify(utterance: Utterance<'_>, prohibitive: bool) -> Register {
         return Register::Keep;
     }
     if polite || super::alignment::contains_quote(text) {
-        Register::Keep
-    } else {
-        Register::Narrative
+        return Register::Keep;
     }
+    // An unquoted inner voice also carries explicit casual endings.
+    if [
+        "だぜ",
+        "たぜ",
+        "だよな",
+        "かよ",
+        "だよね",
+        "のかな",
+        "かなぁ",
+    ]
+    .iter()
+    .any(|ending| tail.ends_with(ending))
+    {
+        return Register::Casual;
+    }
+    Register::Narrative
 }
 
 pub(super) fn contrasting_dialogue(first: Utterance<'_>, second: Utterance<'_>) -> bool {
@@ -110,6 +124,8 @@ const ENDINGS: &[(&str, &str, &str, &str)] = &[
     ("셨습니다", "셨다", "셨어", "셨어요"),
     ("했습니다", "했다", "했어", "했어요"),
     ("였습니다", "였다", "였어", "였어요"),
+    ("웠습니다", "웠다", "웠어", "웠어요"),
+    ("렸습니다", "렸다", "렸어", "렸어요"),
     ("었습니다", "었다", "었어", "었어요"),
     ("았습니다", "았다", "았어", "았어요"),
     ("겠습니까", "겠는가", "겠어", "겠어요"),
@@ -140,6 +156,7 @@ const ENDINGS: &[(&str, &str, &str, &str)] = &[
     ("있습니다", "있다", "있어", "있어요"),
     ("없습니다", "없다", "없어", "없어요"),
     ("드립니다", "드린다", "드려", "드려요"),
+    ("기다립니다", "기다린다", "기다려", "기다려요"),
     ("합니다", "한다", "해", "해요"),
     ("됩니다", "된다", "돼", "돼요"),
     ("갑니다", "간다", "가", "가요"),

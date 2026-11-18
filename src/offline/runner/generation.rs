@@ -1,6 +1,6 @@
-use super::Runner;
+use super::{coverage, Runner};
 use crate::offline::text::split_boundary;
-use anyhow::{bail, Result};
+use anyhow::Result;
 pub(in crate::offline) const MAX_GENERATED_TOKENS: usize = 512;
 impl Runner {
     pub(super) fn generate(&mut self, text: &str, tokens: &[u32]) -> Result<String> {
@@ -10,9 +10,9 @@ impl Runner {
         self.model.reset();
         if text.chars().count() >= 16 {
             if let Some(boundary) = split_boundary(text) {
-                let first_tokens = self.tokenizer.encode(&text[..boundary])?;
+                let first_tokens = self.tokenizer.encode_prose(&text[..boundary])?;
                 let first = self.generate_at(&text[..boundary], &first_tokens, 1)?;
-                let last_tokens = self.tokenizer.encode(&text[boundary..])?;
+                let last_tokens = self.tokenizer.encode_prose(&text[boundary..])?;
                 let last = self.generate_at(&text[boundary..], &last_tokens, 1)?;
                 return Ok(format!("{} {}", first.trim(), last.trim()));
             }
@@ -28,9 +28,9 @@ impl Runner {
             && text.chars().count() >= 16
         {
             if let Some(boundary) = split_boundary(text) {
-                let first_tokens = self.tokenizer.encode(&text[..boundary])?;
+                let first_tokens = self.tokenizer.encode_prose(&text[..boundary])?;
                 let first = self.generate_at(&text[..boundary], &first_tokens, depth + 1)?;
-                let last_tokens = self.tokenizer.encode(&text[boundary..])?;
+                let last_tokens = self.tokenizer.encode_prose(&text[boundary..])?;
                 let last = self.generate_at(&text[boundary..], &last_tokens, depth + 1)?;
                 return Ok(format!("{} {}", first.trim(), last.trim()));
             }
@@ -66,11 +66,7 @@ impl Runner {
                 &blocked,
             )?;
             if next == self.config.eos_token_id {
-                let decoded = self.tokenizer.decode(&output)?;
-                if decoded.is_empty() && text.chars().any(char::is_alphabetic) {
-                    bail!("모델이 빈 번역을 생성했습니다");
-                }
-                return Ok(crate::translation::prose::finish(text, &decoded));
+                return self.finish_decoded(text, &output);
             }
             output.push(next);
             input.clear();
@@ -78,6 +74,27 @@ impl Runner {
         }
         Err(GenerationLimit(limit).into())
     }
+
+    pub(super) fn finish_decoded(&self, source: &str, output: &[u32]) -> Result<String> {
+        let decoded = self.tokenizer.decode(output)?;
+        let translated = crate::translation::prose::finish(source, &decoded);
+        if !coverage::usable(source, &translated) {
+            return Err(UnusableTranslation.into());
+        }
+        Ok(translated)
+    }
+}
+#[derive(Debug)]
+struct UnusableTranslation;
+impl std::fmt::Display for UnusableTranslation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("모델이 읽을 수 있는 번역을 생성하지 못했습니다")
+    }
+}
+impl std::error::Error for UnusableTranslation {}
+
+pub(super) fn incomplete(error: &anyhow::Error) -> bool {
+    error.is::<GenerationLimit>() || error.is::<UnusableTranslation>()
 }
 #[derive(Debug)]
 struct GenerationLimit(usize);

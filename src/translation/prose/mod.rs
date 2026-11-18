@@ -1,14 +1,37 @@
 //! Source-aware typography. It preserves words, units and speech register.
 mod address;
 mod alignment;
+#[cfg(feature = "offline-model")]
+pub(crate) mod game_terms;
 pub mod japanese;
 mod meaning;
 mod modality;
+#[cfg(feature = "offline-model")]
+mod numbers;
 mod register;
 mod relations;
 mod typography;
+mod utterances;
 use std::borrow::Cow;
 pub use typography::finish;
+
+#[cfg(feature = "offline-model")]
+pub(crate) fn restore_facts(source: &str, mut translated: String) -> String {
+    if source
+        .chars()
+        .any(|ch| ch.is_ascii_digit() || ('０'..='９').contains(&ch))
+    {
+        if let Cow::Owned(repaired) = numbers::repair(source, &translated) {
+            translated = repaired;
+        }
+    }
+    if source.contains('【') {
+        if let Cow::Owned(repaired) = game_terms::restore(source, &translated) {
+            translated = repaired;
+        }
+    }
+    translated
+}
 
 /// Process matching source/output lines without guessing a new paragraph map.
 pub fn finish_lines(source: &str, generated: &str) -> String {
