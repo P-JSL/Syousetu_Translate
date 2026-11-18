@@ -162,7 +162,7 @@ fn tensor_context(q: &Tensor, k: &Tensor, v: &Tensor, scale: f64) -> Result<Tens
     let k = k.to_dtype(DType::F32)?.transpose(1, 2)?.contiguous()?;
     let v = v.to_dtype(DType::F32)?.contiguous()?;
     let scores = (q * scale)?.matmul(&k)?;
-    super::tensor_softmax_last_dim(&scores)?
+    super::softmax_last_dim(&scores)?
         .matmul(&v)?
         .reshape((1, heads, rows, dim))?
         .transpose(1, 2)?

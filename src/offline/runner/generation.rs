@@ -1,6 +1,7 @@
 use super::Runner;
 use crate::offline::text::split_boundary;
 use anyhow::{bail, Result};
+pub(in crate::offline) const MAX_GENERATED_TOKENS: usize = 512;
 impl Runner {
     pub(super) fn generate(&mut self, text: &str, tokens: &[u32]) -> Result<String> {
         self.generate_at(text, tokens, 0)
@@ -38,7 +39,7 @@ impl Runner {
     }
     fn generate_inner(&mut self, text: &str, tokens: &[u32]) -> Result<String> {
         let limit = (tokens.len() * 4 + 32)
-            .clamp(64, 512)
+            .clamp(64, MAX_GENERATED_TOKENS)
             .min(self.config.max_position_embeddings - 2);
         let mut source = vec![if self.small {
             self.tokenizer.ko

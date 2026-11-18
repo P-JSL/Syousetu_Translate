@@ -2,8 +2,14 @@
 //! Logical contexts share a bounded Rayon pool, weights and tokenizer. Each
 //! context owns its decoder KV cache, token history and original source index.
 mod plan;
-use super::{generation::repeated_trigram_tokens, Runner};
-use crate::offline::{model::Model, ordered};
+use super::{
+    generation::{repeated_trigram_tokens, MAX_GENERATED_TOKENS},
+    Runner,
+};
+use crate::offline::{
+    model::{DecodeRows, Model},
+    ordered,
+};
 use anyhow::{bail, Result};
 use plan::{Cursor, State};
 
@@ -40,6 +46,7 @@ fn run(
 ) -> Result<()> {
     let count = runners.len().min(input.len());
     let mut cursors: Vec<Option<Cursor>> = (0..count).map(|_| None).collect();
+    let mut device_decoder = runners[0].model.device_decoder(count);
     let mut pending = 0;
     loop {
         // Refill immediately after completion. Input-order admission lets the
@@ -105,7 +112,7 @@ fn run(
             for (slot, encoder) in missing.into_iter().zip(encoded) {
                 let part = cursors[slot].as_mut().unwrap().part.as_mut().unwrap();
                 let limit = (part.encoded.tokens.len() * 4 + 32)
-                    .clamp(64, 512)
+                    .clamp(64, MAX_GENERATED_TOKENS)
                     .min(runners[slot].config.max_position_embeddings - 2);
                 part.state = Some(State {
                     encoder,
@@ -163,9 +170,15 @@ fn run(
                         .map(|_| &mut runner.model)
                 })
                 .collect::<Vec<_>>();
-            pool.install(|| {
-                Model::decode_many(&mut models, &inputs, &past, &encoders, vocab, &blocked)
-            })?
+            let rows = DecodeRows {
+                slots: &active,
+                inputs: &inputs,
+                past: &past,
+                encoders: &encoders,
+                vocab,
+                blocked: &blocked,
+            };
+            pool.install(|| Model::decode_many(&mut models, rows, device_decoder.as_mut()))?
         };
         for (row, &slot) in active.iter().enumerate() {
             let runner = &mut runners[slot];

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Transformers v4.46.3; numerical operations unchanged.
 mod batch;
+pub(super) mod gpu_batch;
 use super::ops::{layer_norm, LayerNorm};
 use crate::int8::Weights;
 use candle_core::{quantized::QMatMul, Module, Result, Tensor};

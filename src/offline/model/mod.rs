@@ -5,7 +5,7 @@
 //! CPU M2M100 inference, following Transformers' Apache-2.0 reference architecture.
 //! Pre-normalization, sinusoidal position offset, source language prefix and
 //! forced Korean decoder prefix differ from Marian. Weights are shared Q8_0
-//! tensors; each runner owns its attention caches.
+//! tensors. Decoder history is isolated by runner on CPU and by slot on GPU.
 macro_rules! profile_scope {
     ($phase:ident) => {
         #[cfg(feature = "inference-profile")]
@@ -36,7 +36,20 @@ use self::ops::{layer_norm, LayerNorm};
 use crate::int8::Weights;
 use candle_core::{quantized::QMatMul, DType, Device, IndexOp, Module, Result, Tensor};
 pub(super) use config::Config;
-use layers::Layer;
+use layers::{
+    gpu_batch::{Decoder, EncoderPlan, Heads},
+    Layer,
+};
+use std::collections::HashSet;
+
+pub(super) struct DecodeRows<'a> {
+    pub(super) slots: &'a [usize],
+    pub(super) inputs: &'a [u32],
+    pub(super) past: &'a [usize],
+    pub(super) encoders: &'a [Tensor],
+    pub(super) vocab: usize,
+    pub(super) blocked: &'a [HashSet<u32>],
+}
 
 #[derive(Clone)]
 pub struct Model {
@@ -199,8 +212,18 @@ impl Model {
             .flat_map(|source| (2..source.len() + 2).map(|position| position as u32))
             .collect::<Vec<_>>();
         let mut x = self.embed_rows(&ids, &positions)?;
+        let gpu_plan = if self.device.is_cpu() {
+            None
+        } else {
+            let heads = self.config.encoder_attention_heads;
+            Some(EncoderPlan::new(
+                &segments,
+                Heads::new(heads, self.config.d_model / heads),
+                &self.device,
+            )?)
+        };
         for layer in &self.encoder {
-            x = layer.encode_segments(&x, &segments)?;
+            x = layer.encode_segments(&x, &segments, gpu_plan.as_ref())?;
         }
         let x = x.apply(&self.encoder_norm)?;
         segments
@@ -209,37 +232,60 @@ impl Model {
             .collect()
     }
 
-    pub fn decode_many(
+    pub(super) fn device_decoder(&self, slots: usize) -> Option<Decoder> {
+        (!self.device.is_cpu()).then(|| {
+            let heads = self.config.decoder_attention_heads;
+            Decoder::new(
+                Heads::new(heads, self.config.d_model / heads),
+                slots,
+                self.decoder.len(),
+                super::runner::generation::MAX_GENERATED_TOKENS,
+                super::tokenizer::MAX_SOURCE_TOKENS + 2,
+            )
+        })
+    }
+
+    pub(super) fn decode_many(
         models: &mut [&mut Self],
-        inputs: &[u32],
-        past: &[usize],
-        encoders: &[Tensor],
-        vocab: usize,
-        blocked: &[std::collections::HashSet<u32>],
+        rows: DecodeRows<'_>,
+        decoder: Option<&mut Decoder>,
     ) -> Result<Vec<u32>> {
         profile_scope!(Decoder);
-        let positions = past
+        let mut device_step = decoder
+            .map(|decoder| decoder.prepare(rows.slots, rows.past, rows.encoders))
+            .transpose()?;
+        let positions = rows
+            .past
             .iter()
             .map(|position| (position + 2) as u32)
             .collect::<Vec<_>>();
-        let mut x = models[0].embed_rows(inputs, &positions)?;
+        let mut x = models[0].embed_rows(rows.inputs, &positions)?;
         for index in 0..models[0].decoder.len() {
             let mut layers = models
                 .iter_mut()
                 .map(|model| &mut model.decoder[index])
                 .collect::<Vec<_>>();
-            x = Layer::decode_rows(&mut layers, &x, encoders)?;
+            x = Layer::decode_rows(
+                &mut layers,
+                &x,
+                rows.encoders,
+                device_step.as_mut().map(|step| (step, index)),
+            )?;
         }
         let last = x.apply(&models[0].decoder_norm)?.squeeze(0)?;
-        profile_op!(
+        let tokens = profile_op!(
             Projection,
             models[0].greedy.forward(
                 &models[0].shared,
                 &last,
-                vocab,
+                rows.vocab,
                 models[0].config.eos_token_id,
-                blocked,
+                rows.blocked,
             )
-        )
+        )?;
+        if let Some(step) = device_step {
+            step.finish();
+        }
+        Ok(tokens)
     }
 }

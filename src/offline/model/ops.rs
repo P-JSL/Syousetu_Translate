@@ -11,6 +11,8 @@ use rayon::prelude::*;
 pub(super) mod attention;
 pub(super) mod bias_relu;
 pub(super) mod bias_residual;
+#[cfg(feature = "cuda")]
+mod cuda;
 
 fn slice<'a>(storage: &'a CpuStorage, layout: &Layout) -> Result<&'a [f32]> {
     let CpuStorage::F32(values) = storage else {
@@ -54,8 +56,24 @@ impl candle_core::CustomOp1 for Softmax {
             });
         Ok((CpuStorage::F32(output), layout.shape().clone()))
     }
+
+    #[cfg(feature = "cuda")]
+    fn cuda_fwd(
+        &self,
+        storage: &candle_core::CudaStorage,
+        layout: &Layout,
+    ) -> Result<(candle_core::CudaStorage, Shape)> {
+        cuda::softmax(storage, layout)
+    }
 }
 pub fn softmax_last_dim(x: &Tensor) -> Result<Tensor> {
+    #[cfg(feature = "cuda")]
+    if x.device().is_cuda() {
+        return x
+            .to_dtype(DType::F32)?
+            .contiguous()?
+            .apply_op1_no_bwd(&Softmax);
+    }
     if !x.device().is_cpu() {
         return tensor_softmax_last_dim(x);
     }

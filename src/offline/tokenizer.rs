@@ -3,6 +3,7 @@ use sentencepiece_rs::SentencePieceProcessor;
 use std::{collections::HashMap, fs, path::Path};
 
 use super::text::split_boundary;
+pub(super) const MAX_SOURCE_TOKENS: usize = 192;
 pub(super) struct Tokenizer {
     sp: SentencePieceProcessor,
     pub(super) vocab: HashMap<String, u32>,
@@ -51,7 +52,7 @@ impl Tokenizer {
     }
     pub(super) fn split(&self, text: &str) -> Result<Vec<EncodedText>> {
         let tokens = self.encode(&crate::translation::prose::japanese::expand(text))?;
-        if tokens.len() <= 192 {
+        if tokens.len() <= MAX_SOURCE_TOKENS {
             return Ok(vec![EncodedText {
                 text: text.to_owned(),
                 tokens,

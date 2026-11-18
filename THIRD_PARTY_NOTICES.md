@@ -24,9 +24,11 @@ It does not redistribute ezTrans XP or its proprietary engine assets.
   adapters optional, schedule batched CPU work on a bounded pool, specialize Q8
   register blocks, and vectorize activation quantization while preserving its
   scalar rounding/scales. Two-tile Q8 and exact full-vocabulary tile reduction
-  additionally preserve per-output group/FMA order. `src/offline/model/ops.rs` adapts only Candle NN's F32 CPU layer norm and softmax,
-  preserving the original reduction order; the full Candle NN crate is not a
-  production dependency. **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
+  additionally preserve per-output group/FMA order. `src/offline/model/ops.rs`
+  adapts Candle NN's F32 CPU layer norm and softmax, preserving the CPU
+  reduction order. Its CUDA module adapts the Rust launcher for Candle's F32
+  softmax kernel. The full Candle NN crate is excluded from production builds.
+  **sentencepiece-rs 0.2.2**, Apache-2.0, supplies pure Rust
   SentencePiece normalization/BPE processing. Python and PyTorch are used only
   for development comparison and are not application dependencies.
 * **P-JSL/gacha_pickup_calculator**, copyright 2026 P-JSL, MIT, commit
