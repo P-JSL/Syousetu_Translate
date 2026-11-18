@@ -1,6 +1,7 @@
 //! Selective batching: shared projections/FFN, private attention and KV caches.
 //! CPU tensors are unpadded. Device attention uses bounded masked padding;
 //! no padding tokens enter the model or cross-sentence attention is introduced.
+use super::super::ops::attention;
 use super::{
     gpu_batch::{EncoderPlan, Step},
     Layer,
@@ -20,23 +21,31 @@ impl Layer {
         let dim = self.attention.heads * self.attention.head_dim;
         let context = profile_op!(
             BatchAttention,
-            if let Some(plan) = device {
-                plan.context(&qkv)
-            } else {
-                let contexts = segments
-                    .par_iter()
-                    .map(|&(start, length)| {
-                        let projected = qkv.narrow(1, start, length)?;
-                        self.attention.context(
-                            self.attention.shape(projected.narrow(2, 0, dim)?)?,
-                            self.attention.shape(projected.narrow(2, dim, dim)?)?,
-                            self.attention.shape(projected.narrow(2, 2 * dim, dim)?)?,
-                            length,
-                            None,
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                Tensor::cat(&contexts, 1)
+            match device {
+                Some(plan) => plan.context(&qkv),
+                None if attention::prefer_encoder_context(segments, dim) =>
+                    attention::encoder_context(
+                        &qkv,
+                        segments,
+                        self.attention.heads,
+                        self.attention.head_dim,
+                    ),
+                None => {
+                    let contexts = segments
+                        .par_iter()
+                        .map(|&(start, length)| {
+                            let projected = qkv.narrow(1, start, length)?;
+                            self.attention.context(
+                                self.attention.shape(projected.narrow(2, 0, dim)?)?,
+                                self.attention.shape(projected.narrow(2, dim, dim)?)?,
+                                self.attention.shape(projected.narrow(2, 2 * dim, dim)?)?,
+                                length,
+                                None,
+                            )
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Tensor::cat(&contexts, 1)
+                }
             }
         )?;
         let x = profile_op!(

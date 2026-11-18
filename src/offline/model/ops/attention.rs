@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fused CPU attention with the same GEMM parameters/reductions as Candle.
 //! Avoids intermediate Tensor/layout objects and reuses per-thread scratch.
+mod encoder;
+
 use candle_core::{cpu::kernels::VecOps, CpuStorage, DType, Device, Result, Storage, Tensor};
+pub(in crate::offline::model) use encoder::{encoder_context, prefer_encoder_context};
 use rayon::prelude::*;
 use std::cell::RefCell;
+
+const HEAD_PARALLEL_WORK: usize = 1_000_000;
 
 #[derive(Default)]
 struct Scratch {
@@ -20,6 +25,93 @@ fn storage<'a>(storage: &'a Storage, layout: &candle_core::Layout) -> Result<&'a
         unreachable!()
     };
     super::slice(cpu, layout)
+}
+
+struct KeyValue<'a> {
+    key: &'a [f32],
+    value: &'a [f32],
+    length: usize,
+    stride: usize,
+}
+
+fn attend_head(
+    query: &[f32],
+    kv: KeyValue<'_>,
+    dim: usize,
+    scores: &mut Vec<f32>,
+    output: &mut [f32],
+    stride: usize,
+) {
+    let rows = query.len() / dim;
+    let length = kv.length;
+    let span = (length - 1) * kv.stride + dim;
+    assert!(kv.key.len() >= span && kv.value.len() >= span);
+    assert!(output.len() >= (rows - 1) * stride + dim);
+    scores.resize(rows * length, 0.0);
+    // SAFETY: query and scores are contiguous, with rows*dim and rows*length
+    // elements. The key/value views and disjoint output cover their strided
+    // shapes. No operand aliases the initialized destinations.
+    unsafe {
+        gemm::gemm(
+            rows,
+            length,
+            dim,
+            scores.as_mut_ptr(),
+            1,
+            length as isize,
+            false,
+            query.as_ptr(),
+            1,
+            dim as isize,
+            kv.key.as_ptr(),
+            kv.stride as isize,
+            1,
+            0f32,
+            1f32,
+            false,
+            false,
+            false,
+            gemm::Parallelism::None,
+        );
+    }
+    for row in scores.chunks_mut(length) {
+        let mut max = f32::NEG_INFINITY;
+        // SAFETY: each row contains exactly `length` initialized scores.
+        unsafe { f32::vec_reduce_max(row.as_ptr(), &mut max, length) };
+        for item in row.iter_mut() {
+            *item = (*item - max).exp();
+        }
+        let mut sum = 0f32;
+        unsafe { f32::vec_reduce_sum(row.as_ptr(), &mut sum, length) };
+        for item in row.iter_mut() {
+            *item /= sum;
+        }
+    }
+    // SAFETY: the same checked spans bound the second GEMM, which reads
+    // scores and values and writes only this head's columns.
+    unsafe {
+        gemm::gemm(
+            rows,
+            dim,
+            length,
+            output.as_mut_ptr(),
+            1,
+            stride as isize,
+            false,
+            scores.as_ptr(),
+            1,
+            length as isize,
+            kv.value.as_ptr(),
+            1,
+            kv.stride as isize,
+            0f32,
+            1f32,
+            false,
+            false,
+            false,
+            gemm::Parallelism::None,
+        );
+    }
 }
 
 pub(in crate::offline::model) fn context(
@@ -55,96 +147,36 @@ pub(in crate::offline::model) fn context(
     let ks = storage(&ks, kl)?;
     let vs = storage(&vs, vl)?;
     let mut output = vec![0f32; q.elem_count()];
-    let run = |head: usize, dst: &mut [f32]| -> Result<()> {
+    let run = |head: usize, dst: &mut [f32]| {
         SCRATCH.with(|cell| {
             let mut scratch = cell.borrow_mut();
             let Scratch { query, scores } = &mut *scratch;
             query.resize(query_len, 0.0);
-            scores.resize(score_len, 0.0);
             for (out, &input) in query
                 .iter_mut()
                 .zip(&qs[head * query_len..(head + 1) * query_len])
             {
                 *out = input * scale as f32;
             }
-            let key = &ks[head * key_len..(head + 1) * key_len];
-            let value = &vs[head * key_len..(head + 1) * key_len];
-            // SAFETY: shapes/contiguous storage were checked above. These are
-            // exactly Candle CPU matmul's row/column strides, with a disjoint
-            // initialized destination. Parallelism stays with the outer pool.
-            unsafe {
-                gemm::gemm(
-                    rows,
-                    length,
-                    dim,
-                    scores.as_mut_ptr(),
-                    1,
-                    length as isize,
-                    false,
-                    query.as_ptr(),
-                    1,
-                    dim as isize,
-                    key.as_ptr(),
-                    dim as isize,
-                    1,
-                    0f32,
-                    1f32,
-                    false,
-                    false,
-                    false,
-                    gemm::Parallelism::None,
-                );
-            }
-            for row in scores.chunks_mut(length) {
-                let mut max = f32::NEG_INFINITY;
-                // SAFETY: full initialized rows of exactly `length` elements.
-                unsafe { f32::vec_reduce_max(row.as_ptr(), &mut max, length) };
-                for item in row.iter_mut() {
-                    *item = (*item - max).exp();
-                }
-                let mut sum = 0f32;
-                unsafe { f32::vec_reduce_sum(row.as_ptr(), &mut sum, length) };
-                for item in row.iter_mut() {
-                    *item /= sum;
-                }
-            }
-            // SAFETY: same checked shapes/strides as the second Candle matmul.
-            unsafe {
-                gemm::gemm(
-                    rows,
-                    dim,
-                    length,
-                    dst.as_mut_ptr(),
-                    1,
-                    dim as isize,
-                    false,
-                    scores.as_ptr(),
-                    1,
-                    length as isize,
-                    value.as_ptr(),
-                    1,
-                    dim as isize,
-                    0f32,
-                    1f32,
-                    false,
-                    false,
-                    false,
-                    gemm::Parallelism::None,
-                );
-            }
-            Ok(())
+            let kv = KeyValue {
+                key: &ks[head * key_len..(head + 1) * key_len],
+                value: &vs[head * key_len..(head + 1) * key_len],
+                length,
+                stride: dim,
+            };
+            attend_head(query, kv, dim, scores, dst, dim);
         })
     };
-    if heads.saturating_mul(score_len).saturating_mul(dim) >= 1_000_000
+    if heads.saturating_mul(score_len).saturating_mul(dim) >= HEAD_PARALLEL_WORK
         && rayon::current_num_threads() > 1
     {
         output
             .par_chunks_mut(query_len)
             .enumerate()
-            .try_for_each(|(head, dst)| run(head, dst))?;
+            .for_each(|(head, dst)| run(head, dst));
     } else {
         for (head, dst) in output.chunks_mut(query_len).enumerate() {
-            run(head, dst)?;
+            run(head, dst);
         }
     }
     Tensor::from_vec(output, (1, heads, rows, dim), &Device::Cpu)?
