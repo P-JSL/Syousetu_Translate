@@ -1,7 +1,8 @@
-//! Autotune two exact full-vocabulary reductions on the actual CPU.
+//! Whole-vocabulary projection with CPU calibration or device-side selection.
 //! Compare at most two pairs per row-count bucket: discard the first pair's
 //! timing, then decide from the second pair with conservative hysteresis.
-use candle_core::{quantized::QMatMul, Module, Result, Tensor};
+use super::super::selection::gpu;
+use candle_core::{quantized::QMatMul, DType, Device, Module, Result, Tensor};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -29,11 +30,22 @@ impl Choice {
         }
     }
 }
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct Projection {
     choices: Arc<Mutex<[Choice; 8]>>,
+    device_ids: Option<gpu::TokenIds>,
 }
 impl Projection {
+    pub(super) fn new(vocab: usize, device: &Device) -> Result<Self> {
+        let device_ids = (!device.is_cpu())
+            .then(|| gpu::TokenIds::new(vocab, device))
+            .transpose()?;
+        Ok(Self {
+            choices: Arc::default(),
+            device_ids,
+        })
+    }
+
     fn dense(
         weight: &QMatMul,
         input: &Tensor,
@@ -70,9 +82,15 @@ impl Projection {
         if rows == 0 || rows != blocked.len() {
             candle_core::bail!("projection row mismatch");
         }
-        if !input.device().is_cpu() {
-            let scores = weight.forward(input)?;
-            return super::super::selection::gpu::select_rows(&scores, vocab, eos, blocked)
+        if let Some(ids) = &self.device_ids {
+            // The existing TensorF16 projection already produces F16 before
+            // widening to F32. Rank those same logits without the dense copy.
+            let scores = if matches!(weight, QMatMul::TensorF16(_)) {
+                weight.forward(&input.to_dtype(DType::F16)?)?
+            } else {
+                weight.forward(input)?
+            };
+            return gpu::select_with_ids(&scores, vocab, eos, blocked, ids)
                 .map_err(|error| candle_core::Error::Msg(error.to_string()));
         }
         if rows == 1 {

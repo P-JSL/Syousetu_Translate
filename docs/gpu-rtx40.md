@@ -31,6 +31,11 @@ CPU/GPU 및 드라이버 간 결과가 섞이지 않도록 GPU의 디스크 결�
 임시 행렬·가중치·CUDA 할당 공간을 제외한 것으로, 실제 총 VRAM 측정값은
 실장비 확인이 필요합니다.
 
+GPU 배치 디코더는 이미 FP16으로 생성되는 어휘 점수를 F32 전체 배열로
+복사하지 않고 바로 선택에 사용합니다. 특수 토큰과 반복 금지 토큰을 같은
+마스크에서 제외하고, 최대값이 0인 행만 부호를 따로 확인합니다. 동점에서는
+기존과 같이 낮은 토큰 번호를 선택합니다.
+
 ## 수동 빌드 아티팩트
 
 GitHub Actions에서 **Build optional NVIDIA CUDA overlay** 워크플로를 수동으로
@@ -107,3 +112,10 @@ rustc --edition=2021 tools/cuda_package.rs -o cuda-package.exe
 인명·수치·부정문·대화체·줄임말 등 실제 번역 품질과 CUDA 오류/OOM도 확인해야
 합니다. CPU와 GPU의 출력이 다르다는 사실만으로 어느 쪽이 더 정확하다고
 판정하지 않습니다.
+
+CUDA 개발 도구가 있는 경우, 실장비에서 K/V 저장과 FP16 어휘 선택을
+독립 기준 계산과 비교할 수 있습니다.
+
+```powershell
+cargo test --locked --release --features cuda --lib matches_reference_on_device -- --ignored
+```

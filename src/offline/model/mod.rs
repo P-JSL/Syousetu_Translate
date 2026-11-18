@@ -97,6 +97,7 @@ impl Model {
         let decoder = (0..cfg.decoder_layers)
             .map(|i| Layer::new(cfg, true, vb.pp(format!("decoder.layers.{i}"))))
             .collect::<Result<Vec<_>>>()?;
+        let greedy = projection::Projection::new(cfg.vocab_size, &device)?;
         Ok(Self {
             device,
             config: cfg.clone(),
@@ -106,7 +107,7 @@ impl Model {
             decoder,
             encoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("encoder.layer_norm"))?,
             decoder_norm: layer_norm(cfg.d_model, 1e-5, vb.pp("decoder.layer_norm"))?,
-            greedy: projection::Projection::default(),
+            greedy,
         })
     }
     fn embed(&self, ids: &[u32], past: usize) -> Result<Tensor> {
