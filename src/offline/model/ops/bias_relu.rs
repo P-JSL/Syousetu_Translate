@@ -1,19 +1,19 @@
-//! Fuse bias addition and ReLU without changing either arithmetic operation.
-use candle_core::{CpuStorage, CustomOp2, DType, Layout, Result, Shape, Tensor};
+//! Apply bias and ReLU in the CPU projection's own allocation.
+use candle_core::{CpuStorage, DType, InplaceOp2, Layout, Result, Tensor};
 use rayon::prelude::*;
 struct BiasRelu;
-impl CustomOp2 for BiasRelu {
+impl InplaceOp2 for BiasRelu {
     fn name(&self) -> &'static str {
         "bias-relu"
     }
     fn cpu_fwd(
         &self,
-        x: &CpuStorage,
+        x: &mut CpuStorage,
         xl: &Layout,
         bias: &CpuStorage,
         bl: &Layout,
-    ) -> Result<(CpuStorage, Shape)> {
-        let source = super::slice(x, xl)?;
+    ) -> Result<()> {
+        let output = super::slice_mut(x, xl)?;
         let bias = super::slice(bias, bl)?;
         let Some(&width) = xl.shape().dims().last() else {
             candle_core::bail!("bias ReLU needs rows");
@@ -21,36 +21,31 @@ impl CustomOp2 for BiasRelu {
         if width == 0 || bl.shape().dims() != [width] {
             candle_core::bail!("bias ReLU shape mismatch");
         }
-        let mut result = vec![0f32; source.len()];
-        let run = |(input, output): (&[f32], &mut [f32])| {
-            for ((&value, &bias), output) in input.iter().zip(bias).zip(output) {
-                *output = (value + bias).max(0f32);
+        let run = |row: &mut [f32]| {
+            for (value, &bias) in row.iter_mut().zip(bias) {
+                *value = (*value + bias).max(0f32);
             }
         };
-        if source.len() >= 65_536 && rayon::current_num_threads() > 1 {
-            source
-                .par_chunks(width)
-                .zip(result.par_chunks_mut(width))
-                .for_each(run);
+        if output.len() >= 65_536 && rayon::current_num_threads() > 1 {
+            output.par_chunks_mut(width).for_each(run);
         } else {
-            source
-                .chunks(width)
-                .zip(result.chunks_mut(width))
-                .for_each(run);
+            output.chunks_mut(width).for_each(run);
         }
         #[cfg(feature = "inference-profile")]
-        crate::offline::profiling::observe_relu(&result, width);
-        Ok((CpuStorage::F32(result), xl.shape().clone()))
+        crate::offline::profiling::observe_relu(output, width);
+        Ok(())
     }
 }
-pub(in crate::offline::model) fn forward(x: &Tensor, bias: &Tensor) -> Result<Tensor> {
-    if !x.device().is_cpu() {
-        return tensor_forward(x, bias);
+/// This tensor is the freshly computed matrix projection and may be modified.
+pub(in crate::offline::model) fn forward(projected: Tensor, bias: &Tensor) -> Result<Tensor> {
+    if !projected.device().is_cpu() {
+        return tensor_forward(&projected, bias);
     }
-    if !x.is_contiguous() || !bias.is_contiguous() {
-        return x.broadcast_add(bias)?.relu();
+    if !projected.is_contiguous() || !bias.is_contiguous() {
+        return projected.broadcast_add(bias)?.relu();
     }
-    x.apply_op2_no_bwd(bias, &BiasRelu)
+    projected.inplace_op2(bias, &BiasRelu)?;
+    Ok(projected)
 }
 
 fn tensor_forward(x: &Tensor, bias: &Tensor) -> Result<Tensor> {
@@ -88,7 +83,7 @@ mod tests {
             )
             .unwrap();
             let expected = x.broadcast_add(&bias).unwrap().relu().unwrap();
-            let actual = forward(&x, &bias).unwrap();
+            let actual = forward(x, &bias).unwrap();
             assert_eq!(
                 actual
                     .flatten_all()

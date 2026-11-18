@@ -5,6 +5,11 @@ use std::{fs, path::Path, sync::Arc};
 use super::{
     model, runner::Runner, tokenizer::Tokenizer, InferenceDevice, OfflineTranslator, ParallelPolicy,
 };
+
+fn worker_count(requested: Option<usize>, cpu: bool, budget: usize) -> usize {
+    requested.unwrap_or(if cpu && budget >= 4 { 64 } else { 32 })
+}
+
 impl OfflineTranslator {
     pub fn builder(root: &Path) -> super::TranslatorBuilder {
         super::TranslatorBuilder::new(root)
@@ -30,7 +35,7 @@ impl OfflineTranslator {
         memory: Memory,
         budget: super::CpuBudget,
         policy: ParallelPolicy,
-        workers: usize,
+        workers: Option<usize>,
         result_cache: Option<&Path>,
         device_request: (InferenceDevice, usize),
     ) -> Result<Self> {
@@ -47,7 +52,6 @@ impl OfflineTranslator {
             .map(usize::from)
             .unwrap_or(1);
         let budget = budget.get().min(available);
-        let count = workers.clamp(1, 256);
         let load_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .num_threads(budget)
@@ -80,6 +84,7 @@ impl OfflineTranslator {
             }
             Err(error) => return Err(error),
         };
+        let count = worker_count(workers, device.is_cpu(), budget);
         if !device.is_cpu() {
             eprintln!(
                 "CUDA GPU {} · SMaLL-100 INT8 파일 / FP16 행렬 · F32 정규화·attention",
@@ -157,5 +162,20 @@ impl OfflineTranslator {
     }
     pub fn flush_result_cache(&mut self) -> Result<()> {
         self.cache.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_count;
+
+    #[test]
+    fn automatic_capacity_uses_the_actual_cpu_budget_and_keeps_explicit_values() {
+        assert_eq!(worker_count(None, true, 3), 32);
+        assert_eq!(worker_count(None, true, 4), 64);
+        assert_eq!(worker_count(None, true, 32), 64);
+        assert_eq!(worker_count(None, false, 4), 32);
+        assert_eq!(worker_count(Some(16), true, 4), 16);
+        assert_eq!(worker_count(Some(128), false, 4), 128);
     }
 }

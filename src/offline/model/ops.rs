@@ -23,6 +23,17 @@ fn slice<'a>(storage: &'a CpuStorage, layout: &Layout) -> Result<&'a [f32]> {
     };
     Ok(&values[start..end])
 }
+
+fn slice_mut<'a>(storage: &'a mut CpuStorage, layout: &Layout) -> Result<&'a mut [f32]> {
+    let CpuStorage::F32(values) = storage else {
+        candle_core::bail!("SMaLL-100 CPU op requires F32");
+    };
+    let Some((start, end)) = layout.contiguous_offsets() else {
+        candle_core::bail!("CPU op requires contiguous output");
+    };
+    Ok(&mut values[start..end])
+}
+
 struct Softmax;
 impl candle_core::CustomOp1 for Softmax {
     fn name(&self) -> &'static str {

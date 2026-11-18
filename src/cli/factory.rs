@@ -91,11 +91,15 @@ pub(super) fn engine_from_args(
             };
             let builder = crate::offline::OfflineTranslator::builder(&config.model_directory())
                 .memory(memory)
-                .workers(config.workers())
                 .cpu_budget(crate::offline::CpuBudget::from_requested(config.workers()))
                 .parallel_policy(config.parallel_mode.parse()?)
                 .device(config.inference_device.parse()?)
                 .cuda_ordinal(config.cuda_device);
+            let builder = if config.max_cpu_core_count > 0 {
+                builder.workers(config.workers())
+            } else {
+                builder
+            };
             let reuse = config.reuse_translations
                 && (!flag(args, "--no-learning") || flag(args, "--reuse-results"));
             let builder = if reuse {

@@ -142,7 +142,7 @@ impl Desktop {
                 ui.label("재시도 횟수");
                 ui.add(egui::DragValue::new(&mut self.config.max_retry_count).range(0..=10));
                 ui.end_row();
-                ui.label("번역 작업자 수 (-1: 기본 32개, 최대 256개 · 큰 배치는 메모리를 더 사용)");
+                ui.label("번역 작업자 수 (-1: 자동, 최대 256개 · 큰 배치는 메모리를 더 사용)");
                 ui.add(egui::DragValue::new(&mut self.config.max_cpu_core_count).range(-1..=256));
                 ui.end_row();
                 ui.label("파일 제목 최대 길이");

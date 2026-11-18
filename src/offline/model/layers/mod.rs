@@ -23,10 +23,10 @@ impl Linear {
         self.weight.forward(x)?.broadcast_add(&self.bias)
     }
     fn forward_relu(&self, x: &Tensor) -> Result<Tensor> {
-        super::ops::bias_relu::forward(&self.weight.forward(x)?, &self.bias)
+        super::ops::bias_relu::forward(self.weight.forward(x)?, &self.bias)
     }
     fn forward_residual(&self, x: &Tensor, residual: &Tensor) -> Result<Tensor> {
-        super::ops::bias_residual::forward(&self.weight.forward(x)?, &self.bias, residual)
+        super::ops::bias_residual::forward(self.weight.forward(x)?, &self.bias, residual)
     }
 }
 #[derive(Clone)]

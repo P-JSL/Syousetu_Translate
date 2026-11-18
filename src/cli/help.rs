@@ -30,7 +30,7 @@ pub(super) fn print() {
   Vocabulary: full model vocabulary; --full-vocabulary is accepted for existing scripts
   Native: --native-dictionary PATH [--native-strict]
   Legacy: --engine eztrans [--eztrans-dir PATH]
-  Common: --config PATH, --dictionary PATH, --japanese, --no-japanese, --jobs 1..256 (default: 32 contexts; larger batches use more RAM)
+  Common: --config PATH, --dictionary PATH, --japanese, --no-japanese, --jobs 1..256 (automatic by default; larger batches use more RAM)
   File: --input-encoding shift_jis|euc-kr|utf-8|utf-16le|latin1
   Download: --furigana --include-comments --comment-separator TEXT
   Output: --title-format TEXT --page-number-format 000 --output-dir DIR --auto-output

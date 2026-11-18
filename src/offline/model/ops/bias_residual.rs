@@ -1,22 +1,21 @@
-//! Fuse `residual + (projection + bias)`, retaining both F32 additions and
-//! their order while avoiding the intermediate biased projection buffer.
-use candle_core::{CpuStorage, CustomOp3, DType, Layout, Result, Shape, Tensor};
+//! Apply both ordered F32 additions in the CPU projection's own allocation.
+use candle_core::{CpuStorage, DType, InplaceOp3, Layout, Result, Tensor};
 use rayon::prelude::*;
 struct BiasResidual;
-impl CustomOp3 for BiasResidual {
+impl InplaceOp3 for BiasResidual {
     fn name(&self) -> &'static str {
         "bias-residual"
     }
     fn cpu_fwd(
         &self,
-        x: &CpuStorage,
+        x: &mut CpuStorage,
         xl: &Layout,
         bias: &CpuStorage,
         bl: &Layout,
         residual: &CpuStorage,
         rl: &Layout,
-    ) -> Result<(CpuStorage, Shape)> {
-        let source = super::slice(x, xl)?;
+    ) -> Result<()> {
+        let output = super::slice_mut(x, xl)?;
         let bias = super::slice(bias, bl)?;
         let residual = super::slice(residual, rl)?;
         let Some(&width) = xl.shape().dims().last() else {
@@ -25,42 +24,39 @@ impl CustomOp3 for BiasResidual {
         if width == 0 || bl.shape().dims() != [width] || xl.shape() != rl.shape() {
             candle_core::bail!("bias residual shape mismatch");
         }
-        let mut result = vec![0f32; source.len()];
-        let run = |((input, residual), output): ((&[f32], &[f32]), &mut [f32])| {
-            for (((&value, &bias), &residual), output) in
-                input.iter().zip(bias).zip(residual).zip(output)
-            {
-                *output = residual + (value + bias);
+        let run = |(row, residual): (&mut [f32], &[f32])| {
+            for ((value, &bias), &residual) in row.iter_mut().zip(bias).zip(residual) {
+                *value = residual + (*value + bias);
             }
         };
-        if source.len() >= 65_536 && rayon::current_num_threads() > 1 {
-            source
-                .par_chunks(width)
+        if output.len() >= 65_536 && rayon::current_num_threads() > 1 {
+            output
+                .par_chunks_mut(width)
                 .zip(residual.par_chunks(width))
-                .zip(result.par_chunks_mut(width))
                 .for_each(run);
         } else {
-            source
-                .chunks(width)
+            output
+                .chunks_mut(width)
                 .zip(residual.chunks(width))
-                .zip(result.chunks_mut(width))
                 .for_each(run);
         }
-        Ok((CpuStorage::F32(result), xl.shape().clone()))
+        Ok(())
     }
 }
+/// The fresh projection may be overwritten. Bias and residual are read-only.
 pub(in crate::offline::model) fn forward(
-    x: &Tensor,
+    projected: Tensor,
     bias: &Tensor,
     residual: &Tensor,
 ) -> Result<Tensor> {
-    if !x.device().is_cpu() {
-        return tensor_forward(x, bias, residual);
+    if !projected.device().is_cpu() {
+        return tensor_forward(&projected, bias, residual);
     }
-    if !x.is_contiguous() || !bias.is_contiguous() || !residual.is_contiguous() {
-        return residual + x.broadcast_add(bias)?;
+    if !projected.is_contiguous() || !bias.is_contiguous() || !residual.is_contiguous() {
+        return residual + projected.broadcast_add(bias)?;
     }
-    x.apply_op3_no_bwd(bias, residual, &BiasResidual)
+    projected.inplace_op3(bias, residual, &BiasResidual)?;
+    Ok(projected)
 }
 
 fn tensor_forward(x: &Tensor, bias: &Tensor, residual: &Tensor) -> Result<Tensor> {
@@ -73,7 +69,7 @@ fn tensor_forward(x: &Tensor, bias: &Tensor, residual: &Tensor) -> Result<Tensor
 mod tests {
     use super::*;
     use candle_core::Device;
-    fn compare(x: &Tensor, bias: &Tensor, residual: &Tensor) {
+    fn compare(x: Tensor, bias: &Tensor, residual: &Tensor) {
         let expected = (residual + x.broadcast_add(bias).unwrap()).unwrap();
         let actual = forward(x, bias, residual).unwrap();
         assert_eq!(actual.dims(), expected.dims());
@@ -118,11 +114,11 @@ mod tests {
                 &Device::Cpu,
             )
             .unwrap();
-            compare(&x, &bias, &residual);
             let transposed = x.transpose(0, 1).unwrap();
-            let residual = residual.transpose(0, 1).unwrap();
-            let bias = Tensor::zeros(rows, candle_core::DType::F32, &Device::Cpu).unwrap();
-            compare(&transposed, &bias, &residual);
+            let transposed_residual = residual.transpose(0, 1).unwrap();
+            let transposed_bias = Tensor::zeros(rows, DType::F32, &Device::Cpu).unwrap();
+            compare(transposed, &transposed_bias, &transposed_residual);
+            compare(x, &bias, &residual);
         }
     }
 

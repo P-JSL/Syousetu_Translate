@@ -22,7 +22,7 @@ pub struct TranslatorBuilder {
     memory: Option<Memory>,
     budget: CpuBudget,
     policy: ParallelPolicy,
-    workers: usize,
+    workers: Option<usize>,
     result_cache: Option<PathBuf>,
     device: InferenceDevice,
     cuda_ordinal: usize,
@@ -38,7 +38,7 @@ impl TranslatorBuilder {
                     .unwrap_or(1),
             ),
             policy: ParallelPolicy::Auto,
-            workers: 32,
+            workers: None,
             result_cache: None,
             device: InferenceDevice::Auto,
             cuda_ordinal: 0,
@@ -57,7 +57,7 @@ impl TranslatorBuilder {
         self
     }
     pub fn workers(mut self, workers: usize) -> Self {
-        self.workers = workers.clamp(1, 256);
+        self.workers = Some(workers.clamp(1, 256));
         self
     }
     pub fn device(mut self, device: InferenceDevice) -> Self {
