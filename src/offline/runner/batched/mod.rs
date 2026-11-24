@@ -14,12 +14,13 @@ use crate::offline::{
 use anyhow::Result;
 use plan::{Cursor, State};
 use prefill::Intake;
+pub(in crate::offline) use prefill::PrefillBudget;
 
 pub(in crate::offline) fn translate(
     runners: &mut [Runner],
     input: &[String],
     pool: &rayon::ThreadPool,
-    cpu_token_limit: Option<usize>,
+    prefill_budget: PrefillBudget,
     mut emit: impl FnMut(usize, String) -> Result<()>,
 ) -> Result<()> {
     if input.is_empty() {
@@ -35,7 +36,7 @@ pub(in crate::offline) fn translate(
         }
         return Ok(());
     }
-    let result = run(runners, input, pool, cpu_token_limit, &mut emit);
+    let result = run(runners, input, pool, prefill_budget, &mut emit);
     for runner in runners {
         runner.model.reset();
     }
@@ -45,7 +46,7 @@ fn run(
     runners: &mut [Runner],
     input: &[String],
     pool: &rayon::ThreadPool,
-    cpu_token_limit: Option<usize>,
+    prefill_budget: PrefillBudget,
     emit: &mut dyn FnMut(usize, String) -> Result<()>,
 ) -> Result<()> {
     let count = runners.len().min(input.len());
@@ -87,16 +88,11 @@ fn run(
                 )
             });
         let prefill_threshold = (count / 4).clamp(1, 32);
-        let stage_ahead =
-            cpu_token_limit.is_some() && ready != 0 && intake.can_stage(prefill_threshold);
+        let stage_ahead = matches!(prefill_budget, PrefillBudget::Cpu(_))
+            && ready != 0
+            && intake.can_stage(prefill_threshold);
         if missing != 0 && (missing >= prefill_threshold || ready <= count / 2 || stage_ahead) {
-            intake.encode(
-                &mut cursors,
-                &runners[0],
-                pool,
-                cpu_token_limit,
-                stage_ahead,
-            )?;
+            intake.encode(&mut cursors, &runners[0], pool, prefill_budget, stage_ahead)?;
         }
         let active = cursors
             .iter()

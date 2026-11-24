@@ -24,7 +24,7 @@ pub struct OfflineTranslator {
     single_pool: Arc<rayon::ThreadPool>,
     compute_pool: Arc<rayon::ThreadPool>,
     parallel: Option<bool>,
-    cpu_batch_token_limit: Option<usize>,
+    prefill_budget: runner::batched::PrefillBudget,
 }
 
 #[cfg(test)]

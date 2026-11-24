@@ -1,6 +1,7 @@
 //! Device attention packs token rows in bounded groups and keeps K/V on the device.
 mod decode;
 mod encode;
+mod sources;
 mod storage;
 
 pub(in crate::offline) use decode::Decoder;

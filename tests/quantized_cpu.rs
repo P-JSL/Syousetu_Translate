@@ -19,7 +19,8 @@ fn prepacked_q8_matches_original_block_dot_and_fma_order() {
     {
         return;
     }
-    for (m, n, k) in [(1, 16, 256), (7, 48, 1024), (65, 32, 4096), (257, 48, 256)] {
+    // 65 × 48 exercises both a partial input block and the unpaired output tile.
+    for (m, n, k) in [(1, 16, 256), (7, 48, 1024), (65, 48, 4096), (257, 48, 256)] {
         let weights = (0..n * k)
             .map(|i| ((i * 17 % 997) as f32 - 498.) / 127.)
             .collect::<Vec<_>>();

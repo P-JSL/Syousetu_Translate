@@ -3,11 +3,44 @@ use anyhow::{bail, Result};
 use std::{fs, path::Path, sync::Arc};
 
 use super::{
-    model, runner::Runner, tokenizer::Tokenizer, InferenceDevice, OfflineTranslator, ParallelPolicy,
+    device::cuda_free_bytes,
+    model,
+    runner::{batched::PrefillBudget, generation::MAX_GENERATED_TOKENS, Runner},
+    tokenizer::{Tokenizer, MAX_SOURCE_TOKENS},
+    InferenceDevice, OfflineTranslator, ParallelPolicy,
 };
 
-fn worker_count(requested: Option<usize>, cpu: bool, budget: usize) -> usize {
-    requested.unwrap_or(if cpu && budget >= 4 { 128 } else { 32 })
+const MAX_CONTEXT_TOKENS: usize = MAX_SOURCE_TOKENS + 2 + MAX_GENERATED_TOKENS;
+const CUDA_WORKSPACE_RESERVE: u64 = 4 * (1 << 30);
+
+fn worker_count(
+    requested: Option<usize>,
+    cpu: bool,
+    budget: usize,
+    gpu_count: impl FnOnce() -> usize,
+) -> usize {
+    requested.unwrap_or_else(|| match (cpu, budget) {
+        (true, 4..) => 128,
+        (true, _) => 32,
+        (false, _) => gpu_count(),
+    })
+}
+
+fn cuda_worker_count(free: Option<u64>, width: usize, decoder_layers: usize) -> usize {
+    let Some(free) = free else {
+        return 32;
+    };
+    // F32 key and value for every permitted source and decoded token at every
+    // decoder layer. Budget two complete sets for growth and allow a separate
+    // reserve for activations, temporary workspaces and other allocations.
+    let bank_bytes = (width as u64)
+        .saturating_mul(decoder_layers as u64)
+        .saturating_mul(2 * std::mem::size_of::<f32>() as u64 * MAX_CONTEXT_TOKENS as u64);
+    let available = free.saturating_sub(CUDA_WORKSPACE_RESERVE);
+    [128, 64]
+        .into_iter()
+        .find(|&workers| bank_bytes.saturating_mul(2 * workers as u64) <= available)
+        .unwrap_or(32)
 }
 
 impl OfflineTranslator {
@@ -84,7 +117,14 @@ impl OfflineTranslator {
             }
             Err(error) => return Err(error),
         };
-        let count = worker_count(workers, device.is_cpu(), budget);
+        let count = worker_count(workers, device.is_cpu(), budget, || {
+            let free = if policy == ParallelPolicy::Serial {
+                None
+            } else {
+                cuda_free_bytes(&device)
+            };
+            cuda_worker_count(free, config.d_model, config.decoder_layers)
+        });
         if !device.is_cpu() {
             eprintln!(
                 "CUDA GPU {} · SMaLL-100 INT8 파일 / FP16 행렬 · F32 정규화·attention",
@@ -138,11 +178,11 @@ impl OfflineTranslator {
             } else {
                 None
             },
-            cpu_batch_token_limit: (device.is_cpu() && workers.is_none() && count > 64).then_some(
-                64 * (super::tokenizer::MAX_SOURCE_TOKENS
-                    + 2
-                    + super::runner::generation::MAX_GENERATED_TOKENS),
-            ),
+            prefill_budget: match (workers, device.is_cpu(), device.is_cuda(), count) {
+                (None, true, _, 65..) => PrefillBudget::Cpu(64 * MAX_CONTEXT_TOKENS),
+                (None, _, true, 33..) => PrefillBudget::Cuda,
+                _ => PrefillBudget::Default,
+            },
         })
     }
     pub fn translate(&mut self, text: &str) -> Result<String> {
@@ -172,15 +212,31 @@ impl OfflineTranslator {
 
 #[cfg(test)]
 mod tests {
-    use super::worker_count;
+    use super::{cuda_worker_count, worker_count, CUDA_WORKSPACE_RESERVE};
 
     #[test]
     fn automatic_capacity_uses_the_actual_cpu_budget_and_keeps_explicit_values() {
-        assert_eq!(worker_count(None, true, 3), 32);
-        assert_eq!(worker_count(None, true, 4), 128);
-        assert_eq!(worker_count(None, true, 32), 128);
-        assert_eq!(worker_count(None, false, 4), 32);
-        assert_eq!(worker_count(Some(16), true, 4), 16);
-        assert_eq!(worker_count(Some(128), false, 4), 128);
+        let unexpected_gpu_query = || panic!("should not query VRAM");
+        assert_eq!(worker_count(None, true, 3, unexpected_gpu_query), 32);
+        assert_eq!(worker_count(None, true, 4, unexpected_gpu_query), 128);
+        assert_eq!(worker_count(None, true, 32, unexpected_gpu_query), 128);
+        assert_eq!(worker_count(None, false, 4, || 64), 64);
+        assert_eq!(worker_count(Some(16), true, 4, unexpected_gpu_query), 16);
+        assert_eq!(worker_count(Some(128), false, 4, unexpected_gpu_query), 128);
+    }
+
+    #[test]
+    fn cuda_capacity_fits_workspace_reserve_and_two_full_kv_banks() {
+        let workers = |bytes| cuda_worker_count(Some(bytes), 1024, 3);
+        let threshold_64 = CUDA_WORKSPACE_RESERVE + 2_220_883_968;
+        let threshold_128 = CUDA_WORKSPACE_RESERVE + 4_441_767_936;
+        assert_eq!(cuda_worker_count(None, 1024, 3), 32);
+        assert_eq!(workers(0), 32);
+        assert_eq!(workers(threshold_64 - 1), 32);
+        assert_eq!(workers(threshold_64), 64);
+        assert_eq!(workers(threshold_128 - 1), 64);
+        assert_eq!(workers(threshold_128), 128);
+        assert_eq!(workers(u64::MAX), 128);
+        assert_eq!(cuda_worker_count(Some(u64::MAX), usize::MAX, 3), 32);
     }
 }

@@ -1,5 +1,4 @@
-//! F32 K/V pairs with token-major rows. A history row belongs to one (step,
-//! slot) and an encoder row to one (slot, source position).
+//! F32 self-attention K/V ring. Each row belongs to one (step, slot).
 use candle_core::{DType, Device, Result, Tensor};
 
 #[derive(Default)]
@@ -40,24 +39,4 @@ pub(super) fn history<'a>(
         *bank = Some(next);
     }
     Ok(bank.as_ref().expect("history was allocated"))
-}
-
-pub(super) fn sources<'a>(
-    bank: &'a mut Option<Tensor>,
-    capacity: usize,
-    slots: usize,
-    width: usize,
-    device: &Device,
-) -> Result<&'a Tensor> {
-    if bank
-        .as_ref()
-        .is_none_or(|current| current.dims()[1] != capacity)
-    {
-        let next = Tensor::zeros((slots, capacity, width), DType::F32, device)?;
-        if let Some(current) = bank.as_ref() {
-            next.slice_set(current, 1, 0)?;
-        }
-        *bank = Some(next);
-    }
-    Ok(bank.as_ref().expect("source bank was allocated"))
 }

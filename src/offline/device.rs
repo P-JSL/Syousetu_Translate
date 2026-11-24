@@ -53,6 +53,20 @@ fn initialize_cuda(_ordinal: usize) -> Result<Device> {
     bail!("이 실행 파일은 CPU 전용입니다. CUDA 기능 빌드가 필요합니다")
 }
 
+#[cfg(feature = "cuda")]
+pub(super) fn cuda_free_bytes(device: &Device) -> Option<u64> {
+    let Device::Cuda(device) = device else {
+        return None;
+    };
+    let (free, _) = device.cuda_stream().context().mem_get_info().ok()?;
+    Some(free as u64)
+}
+
+#[cfg(not(feature = "cuda"))]
+pub(super) fn cuda_free_bytes(_device: &Device) -> Option<u64> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

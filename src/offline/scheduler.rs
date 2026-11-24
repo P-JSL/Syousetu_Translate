@@ -74,7 +74,7 @@ impl OfflineTranslator {
                 &mut self.runners,
                 &batch.unique,
                 &pool,
-                self.cpu_batch_token_limit,
+                self.prefill_budget,
                 &mut complete,
             )?;
         }

@@ -526,18 +526,27 @@ pub(crate) fn matmul_tiles(
         let q8 = matches!(packed, PackedX86::Q8_0(_));
         let dual = lv == X86Level::Avx512Vnni && q8 && m > 1;
         let nt_step = if dual { 2 } else { 1 };
-        let mt_step = if dual && m >= 256 && n < 16_384 {
+        let row_step = if dual && m >= 256 && n < 16_384 {
             6
         } else if !dual && q8 && n >= 16_384 {
             kernels::MAX_MT
         } else {
             4
         };
+        // The bounded window benefits wide output projections and small
+        // batches with long reduction axes. Keep the original large-batch
+        // encoder tiles where the extra accumulator traffic offsets reuse.
+        let slab = dual
+            && m >= dual_q8::SLAB_ROWS
+            && k >= 1024
+            && (n >= 16_384 || (k >= 4096 && n <= 1024 && m <= 128));
+        let mt_step = if slab { dual_q8::SLAB_ROWS } else { row_step };
         let dst_ptr = dst.as_mut_ptr() as usize;
         let total_units = n_tiles.div_ceil(nt_step) * m.div_ceil(mt_step);
         let m_units = m.div_ceil(mt_step);
         super::utils::execute_matmul_tiles(total_units, (m, k, n), |range| {
             let dst_ptr = dst_ptr as *mut f32;
+            let mut scratch = slab.then(|| [0f32; dual_q8::SLAB_ROWS * 2 * TILE_N]);
             for unit in range {
                 let nt = unit / m_units * nt_step;
                 let m0 = (unit % m_units) * mt_step;
@@ -548,9 +557,30 @@ pub(crate) fn matmul_tiles(
                             let PackedX86::Q8_0(tiles) = packed else {
                                 unreachable!()
                             };
-                            dual_q8::compute(tiles, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                            if let Some(scratch) = &mut scratch {
+                                dual_q8::slab(
+                                    tiles,
+                                    &lhs_q[m0 * kb..(m0 + mt) * kb],
+                                    kb,
+                                    nt,
+                                    mt,
+                                    scratch,
+                                );
+                                for row in 0..mt {
+                                    std::ptr::copy_nonoverlapping(
+                                        scratch.as_ptr().add(row * 2 * TILE_N),
+                                        dst_ptr.add((m0 + row) * n + nt * TILE_N),
+                                        2 * TILE_N,
+                                    );
+                                }
+                            } else {
+                                dual_q8::compute(tiles, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                            }
                         } else {
-                            matmul_unit_512(packed, lhs_q, kb, nt, m0, mt, dst_ptr, n);
+                            for row in (m0..m0 + mt).step_by(row_step) {
+                                let rows = (m0 + mt - row).min(row_step);
+                                matmul_unit_512(packed, lhs_q, kb, nt, row, rows, dst_ptr, n);
+                            }
                         }
                     } else {
                         matmul_unit_256(

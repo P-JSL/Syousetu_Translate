@@ -2,6 +2,10 @@
 //! keeps the scalar/block FMA order of the original Q8 register kernel.
 use super::{BlockQ8K, TileQ8_0, TILE_N};
 use core::arch::x86_64::*;
+use std::ops::Range;
+
+pub(super) const SLAB_ROWS: usize = 24;
+const K_WINDOW: usize = 2;
 
 #[inline(always)]
 unsafe fn broadcast(act: &BlockQ8K, offset: usize) -> __m512i {
@@ -72,7 +76,7 @@ unsafe fn kernel<const M: usize>(
 // require 6*M accumulators before even loading operands.
 #[target_feature(enable = "avx512f,avx512vnni,avx512bw")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn six_rows<const M: usize>(
+unsafe fn six_rows<const M: usize, const RESUME: bool>(
     tiles: &[TileQ8_0],
     lhs: &[BlockQ8K],
     kb: usize,
@@ -81,10 +85,17 @@ unsafe fn six_rows<const M: usize>(
     dst: *mut f32,
     n: usize,
     column: usize,
+    blocks: Range<usize>,
 ) {
     let mut acc0 = [_mm512_setzero_ps(); M];
     let mut acc1 = [_mm512_setzero_ps(); M];
-    for block in 0..kb {
+    if RESUME && blocks.start != 0 {
+        for row in 0..M {
+            acc0[row] = _mm512_loadu_ps(dst.add((m0 + row) * n + column));
+            acc1[row] = _mm512_loadu_ps(dst.add((m0 + row) * n + column + TILE_N));
+        }
+    }
+    for block in blocks {
         let acts: [&BlockQ8K; M] = std::array::from_fn(|row| &lhs[(m0 + row) * kb + block]);
         for sub in 0..8 {
             let left = &tiles[nt * kb * 8 + block * 8 + sub];
@@ -136,8 +147,8 @@ pub(super) unsafe fn compute(
         2 => kernel::<2>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N),
         3 => kernel::<3>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N),
         4 => kernel::<4>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N),
-        5 => six_rows::<5>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N),
-        6 => six_rows::<6>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N),
+        5 => six_rows::<5, false>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N, 0..kb),
+        6 => six_rows::<6, false>(tiles, lhs, kb, nt, m0, dst, n, nt * TILE_N, 0..kb),
         _ => unreachable!("invalid dual Q8 row block"),
     }
 }
@@ -158,8 +169,43 @@ pub(super) unsafe fn local(
         2 => kernel::<2>(tiles, lhs, kb, nt, m0, dst, 32, 0),
         3 => kernel::<3>(tiles, lhs, kb, nt, m0, dst, 32, 0),
         4 => kernel::<4>(tiles, lhs, kb, nt, m0, dst, 32, 0),
-        5 => six_rows::<5>(tiles, lhs, kb, nt, m0, dst, 32, 0),
-        6 => six_rows::<6>(tiles, lhs, kb, nt, m0, dst, 32, 0),
+        5 => six_rows::<5, false>(tiles, lhs, kb, nt, m0, dst, 32, 0, 0..kb),
+        6 => six_rows::<6, false>(tiles, lhs, kb, nt, m0, dst, 32, 0, 0..kb),
         _ => unreachable!("invalid local Q8 rows"),
+    }
+}
+
+/// Sweep several activation groups while each packed weight window fits L1.
+/// The scratch matrix stores the same F32 accumulators between windows; it
+/// does not change the sequence of scaled 32-value dots for any output.
+#[target_feature(enable = "avx512f,avx512vnni,avx512bw")]
+pub(super) unsafe fn slab(
+    tiles: &[TileQ8_0],
+    lhs: &[BlockQ8K],
+    kb: usize,
+    nt: usize,
+    rows: usize,
+    scratch: &mut [f32; SLAB_ROWS * 2 * TILE_N],
+) {
+    debug_assert!((1..=SLAB_ROWS).contains(&rows));
+    let dst = scratch.as_mut_ptr();
+    for start in (0..kb).step_by(K_WINDOW) {
+        let end = (start + K_WINDOW).min(kb);
+        for m0 in (0..rows).step_by(6) {
+            macro_rules! compute {
+                ($rows:literal) => {
+                    six_rows::<$rows, true>(tiles, lhs, kb, nt, m0, dst, 2 * TILE_N, 0, start..end)
+                };
+            }
+            match (rows - m0).min(6) {
+                1 => compute!(1),
+                2 => compute!(2),
+                3 => compute!(3),
+                4 => compute!(4),
+                5 => compute!(5),
+                6 => compute!(6),
+                _ => unreachable!(),
+            }
+        }
     }
 }

@@ -8,6 +8,28 @@ use std::collections::VecDeque;
 const AHEAD_ROWS: usize = 32;
 const ENCODER_BATCH_TOKENS: usize = 2048;
 
+#[derive(Clone, Copy)]
+pub(in crate::offline) enum PrefillBudget {
+    Default,
+    Cpu(usize),
+    Cuda,
+}
+
+impl PrefillBudget {
+    fn retain_encoder(self, encoder: Tensor) -> candle_core::Result<Tensor> {
+        // A narrow view otherwise keeps the entire packed encoder batch alive
+        // until its last context finishes. Copy only the source's own rows.
+        match self {
+            Self::Default => Ok(encoder),
+            Self::Cpu(_) => {
+                let values = encoder.flatten_all()?.to_vec1::<f32>()?;
+                Tensor::from_vec(values, encoder.shape(), &Device::Cpu)
+            }
+            Self::Cuda => encoder.force_contiguous(),
+        }
+    }
+}
+
 pub(super) struct Intake<'a> {
     input: &'a [String],
     next: usize,
@@ -46,7 +68,7 @@ impl<'a> Intake<'a> {
         active: &mut [Option<Cursor>],
         runner: &Runner,
         pool: &rayon::ThreadPool,
-        token_limit: Option<usize>,
+        budget: PrefillBudget,
         stage_ahead: bool,
     ) -> Result<()> {
         let reserved_now: usize = active
@@ -60,9 +82,10 @@ impl<'a> Intake<'a> {
                     .map(|state| source_tokens(part) + state.limit)
             })
             .sum();
-        let mut available = token_limit
-            .unwrap_or(usize::MAX)
-            .saturating_sub(reserved_now);
+        let mut available = match budget {
+            PrefillBudget::Cpu(limit) => limit.saturating_sub(reserved_now),
+            _ => usize::MAX,
+        };
         let mut parts = Vec::new();
         for part in active
             .iter_mut()
@@ -109,10 +132,9 @@ impl<'a> Intake<'a> {
             );
         }
 
-        let width = if token_limit.is_some() {
-            ENCODER_BATCH_TOKENS
-        } else {
-            usize::MAX
+        let width = match budget {
+            PrefillBudget::Default => usize::MAX,
+            _ => ENCODER_BATCH_TOKENS,
         };
         let mut offset = 0;
         while offset < parts.len() {
@@ -135,16 +157,8 @@ impl<'a> Intake<'a> {
                 .collect::<Vec<_>>();
             let encoders = pool.install(|| runner.model.encode_many(&sources))?;
             for (part, encoder) in group.iter_mut().zip(encoders) {
-                // A narrow view would keep the entire packed encoder batch
-                // alive until its last (possibly very long) context finishes.
-                let encoder = if token_limit.is_some() {
-                    let values = encoder.flatten_all()?.to_vec1::<f32>()?;
-                    Tensor::from_vec(values, encoder.shape(), &Device::Cpu)?
-                } else {
-                    encoder
-                };
                 part.state = Some(State {
-                    encoder,
+                    encoder: budget.retain_encoder(encoder)?,
                     input: runner.config.decoder_start_token_id,
                     past: 0,
                     output: Vec::new(),
@@ -174,5 +188,27 @@ fn reserve(available: &mut usize, part: &Part, runner: &Runner) -> bool {
         true
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candle_core::{CpuStorage, Storage};
+
+    #[test]
+    fn cuda_prefill_keeps_only_the_selected_encoder_rows() {
+        let packed = Tensor::new(&[[[1f32, 2.], [-0., 4.], [5., 6.]]], &Device::Cpu).unwrap();
+        let source = packed.narrow(1, 1, 1).unwrap();
+        let compact = PrefillBudget::Cuda.retain_encoder(source).unwrap();
+        assert_eq!(compact.dims(), &[1, 1, 2]);
+        let (storage, layout) = compact.storage_and_layout();
+        assert_eq!(layout.start_offset(), 0);
+        let Storage::Cpu(CpuStorage::F32(values)) = &*storage else {
+            panic!("expected F32 backing storage");
+        };
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0].to_bits(), (-0.0f32).to_bits());
+        assert_eq!(values[1], 4.);
     }
 }

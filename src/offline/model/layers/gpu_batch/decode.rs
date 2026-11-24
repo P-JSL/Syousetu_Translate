@@ -1,4 +1,4 @@
-use super::{join_rows, row_index, storage, Heads, KeyMask, GROUP_SIZE, PAD_ROW};
+use super::{join_rows, row_index, sources, storage, Heads, KeyMask, GROUP_SIZE, PAD_ROW};
 use candle_core::{Device, Error, Result, Tensor, TensorId};
 use std::ops::Range;
 
@@ -68,9 +68,8 @@ struct Group {
     rows: Range<usize>,
     slots: usize,
     history: Lookup,
-    sources: Lookup,
+    sources: sources::Plan,
     append: Vec<Write>,
-    refresh: Vec<Write>,
 }
 
 /// One set of slot addresses and masks shared by all decoder layers.
@@ -152,7 +151,7 @@ impl Decoder {
             let history_capacity =
                 capacity(layer.history.as_ref(), 0, &key_lengths, self.limits.0)?;
             let source_capacity =
-                capacity(layer.sources.as_ref(), 1, source_lengths, self.limits.1)?;
+                capacity(layer.sources.as_ref(), 2, source_lengths, self.limits.1)?;
 
             let history = Lookup::new(
                 &local,
@@ -163,14 +162,6 @@ impl Decoder {
                     ((self.step + 1 - length + t) % history_capacity) * group_slots + slot
                 },
             )?;
-            let sources = Lookup::new(
-                &local,
-                source_lengths,
-                source_capacity,
-                device,
-                |slot, t, _| slot * source_capacity + t,
-            )?;
-
             let mut append = Vec::new();
             let mut begin = row;
             for run in local.chunk_by(|a, b| *a + 1 == *b) {
@@ -184,10 +175,7 @@ impl Decoder {
             for (offset, (&slot, &length)) in local.iter().zip(source_lengths).enumerate() {
                 if past[row + offset] == 0 {
                     new_sources.push(row + offset);
-                    refresh.push(Write {
-                        slot,
-                        rows: source_offset..source_offset + length,
-                    });
+                    refresh.push((slot, source_offset..source_offset + length));
                     source_offset += length;
                 }
             }
@@ -196,9 +184,15 @@ impl Decoder {
                 rows: row..end,
                 slots: group_slots,
                 history,
-                sources,
+                sources: sources::Plan::new(
+                    self.heads,
+                    &local,
+                    source_lengths,
+                    source_capacity,
+                    &refresh,
+                    device,
+                )?,
                 append,
-                refresh,
             });
             row = end;
         }
@@ -268,26 +262,14 @@ impl Step<'_> {
         layer: usize,
         kv: &Tensor,
     ) -> Result<()> {
-        let width = 2 * self.decoder.heads.hidden();
         let kv = kv.squeeze(0)?;
         for group in &self.groups {
-            if group.refresh.is_empty() {
-                continue;
-            }
-            let bank = storage::sources(
+            group.sources.store(
                 &mut self.decoder.groups[group.index][layer].sources,
-                group.sources.capacity,
+                &kv,
+                self.decoder.heads,
                 group.slots,
-                width,
-                kv.device(),
             )?;
-            for write in &group.refresh {
-                bank.get(write.slot)?.slice_set(
-                    &kv.narrow(0, write.rows.start, write.rows.len())?,
-                    0,
-                    0,
-                )?;
-            }
         }
         Ok(())
     }

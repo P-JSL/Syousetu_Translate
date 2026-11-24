@@ -55,7 +55,7 @@ fn check(expected: &[f32], actual: &[f32], step: usize) {
     }
 }
 
-fn compare_slots(device: &Device) {
+fn compare_slots(device: &Device, gap: usize) {
     let heads = Heads::new(2, 4);
     let hidden = heads.hidden();
     let mut decoder = Decoder::new(heads, 35, 1, 32, 8);
@@ -69,13 +69,13 @@ fn compare_slots(device: &Device) {
         let mut slots = vec![0];
         let mut past = vec![if step < 9 { step % 2 } else { step - 9 }];
         if !(3..12).contains(&step) {
-            slots.push(2);
+            slots.push(gap);
             past.push(step.saturating_sub(12));
         }
         slots.push(32);
         past.push(step);
         if step % 2 == 0 {
-            slots.push(34);
+            slots.push(32 + gap);
             past.push(0);
         }
         let mut encoders = Vec::new();
@@ -141,12 +141,17 @@ fn compare_slots(device: &Device) {
 
 #[test]
 fn retained_kv_matches_independent_sentences_across_wrap_growth_and_slot_reuse() {
-    compare_slots(&Device::Cpu);
+    for gap in [1, 2] {
+        compare_slots(&Device::Cpu, gap);
+    }
 }
 
 #[cfg(feature = "cuda")]
 #[test]
 #[ignore = "requires a real CUDA device and driver"]
 fn cuda_batched_kv_matches_reference_on_device() {
-    compare_slots(&Device::new_cuda(0).unwrap());
+    let device = Device::new_cuda(0).unwrap();
+    for gap in [1, 2] {
+        compare_slots(&device, gap);
+    }
 }
