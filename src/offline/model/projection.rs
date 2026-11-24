@@ -54,14 +54,8 @@ impl Projection {
         blocked: &[HashSet<u32>],
     ) -> Result<Vec<u32>> {
         let scores = weight.forward(input)?;
-        blocked
-            .iter()
-            .enumerate()
-            .map(|(row, banned)| {
-                super::super::selection::select_logits(&scores.get(row)?, vocab, eos, banned)
-                    .map_err(|error| candle_core::Error::Msg(error.to_string()))
-            })
-            .collect()
+        super::super::selection::select_cpu_rows(&scores, vocab, eos, blocked)
+            .map_err(|error| candle_core::Error::Msg(error.to_string()))
     }
     fn record(&self, bucket: usize, choice: Choice) -> Result<()> {
         self.choices

@@ -13,8 +13,8 @@ mod selection;
 mod text;
 mod tokenizer;
 pub use builder::{CpuBudget, TranslatorBuilder};
-pub use device::InferenceDevice;
 pub use cache::CacheStats;
+pub use device::InferenceDevice;
 pub use policy::ParallelPolicy;
 use runner::Runner;
 use std::sync::Arc;
@@ -24,6 +24,7 @@ pub struct OfflineTranslator {
     single_pool: Arc<rayon::ThreadPool>,
     compute_pool: Arc<rayon::ThreadPool>,
     parallel: Option<bool>,
+    cpu_batch_token_limit: Option<usize>,
 }
 
 #[cfg(test)]

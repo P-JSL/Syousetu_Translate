@@ -100,15 +100,12 @@ impl Desktop {
         egui::ComboBox::from_label("본문 처리 방식")
             .selected_text(&self.config.parallel_mode)
             .show_ui(ui, |ui| {
-                for (value, label) in [
-                    ("auto", "자동 성능 확인"),
-                    ("serial", "단일"),
-                    ("parallel", "병렬"),
-                ] {
+                for (value, label) in [("auto", "자동"), ("serial", "단일"), ("parallel", "병렬")]
+                {
                     ui.selectable_value(&mut self.config.parallel_mode, value.into(), label);
                 }
             });
-        ui.label("자동: 첫 본문 묶음의 속도와 출력 일치를 확인하고 빠른 방식을 선택합니다.");
+        ui.label("자동은 새로 번역할 줄이 여러 개면 한 묶음으로 처리합니다.");
         ui.checkbox(&mut self.config.print_japanese, "일본어 동시 출력");
         ui.checkbox(&mut self.config.include_furigana, "후리가나 포함");
         ui.checkbox(&mut self.config.include_comment, "작가 코멘트 포함");

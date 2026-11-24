@@ -7,7 +7,7 @@ use super::{
 };
 
 fn worker_count(requested: Option<usize>, cpu: bool, budget: usize) -> usize {
-    requested.unwrap_or(if cpu && budget >= 4 { 64 } else { 32 })
+    requested.unwrap_or(if cpu && budget >= 4 { 128 } else { 32 })
 }
 
 impl OfflineTranslator {
@@ -138,6 +138,11 @@ impl OfflineTranslator {
             } else {
                 None
             },
+            cpu_batch_token_limit: (device.is_cpu() && workers.is_none() && count > 64).then_some(
+                64 * (super::tokenizer::MAX_SOURCE_TOKENS
+                    + 2
+                    + super::runner::generation::MAX_GENERATED_TOKENS),
+            ),
         })
     }
     pub fn translate(&mut self, text: &str) -> Result<String> {
@@ -172,8 +177,8 @@ mod tests {
     #[test]
     fn automatic_capacity_uses_the_actual_cpu_budget_and_keeps_explicit_values() {
         assert_eq!(worker_count(None, true, 3), 32);
-        assert_eq!(worker_count(None, true, 4), 64);
-        assert_eq!(worker_count(None, true, 32), 64);
+        assert_eq!(worker_count(None, true, 4), 128);
+        assert_eq!(worker_count(None, true, 32), 128);
         assert_eq!(worker_count(None, false, 4), 32);
         assert_eq!(worker_count(Some(16), true, 4), 16);
         assert_eq!(worker_count(Some(128), false, 4), 128);

@@ -2,7 +2,7 @@
 #![cfg(feature = "offline-model")]
 use syousetu_translate::{
     learning::Memory,
-    offline::{OfflineTranslator, ParallelPolicy},
+    offline::{CpuBudget, InferenceDevice, OfflineTranslator, ParallelPolicy},
 };
 
 #[test]
@@ -65,6 +65,46 @@ fn direct_translation_parallel_merge_and_user_corrections() {
         "{}",
         serde_json::json!({"serial_seconds":serial_seconds,"parallel_seconds":parallel_seconds,"outputs":expected})
     );
+}
+
+#[test]
+#[ignore = "requires pinned local model assets; verifies automatic source staging and order"]
+fn default_cpu_batch_matches_explicit_capacity_through_refills() {
+    let root = syousetu_translate::models::default_dir();
+    let lines = (0..182)
+        .map(|index| {
+            let body = if index % 9 == 0 {
+                "彼女は雨がやむまで、図書館で静かに本を読んでいました。"
+            } else {
+                "明日は晴れです。"
+            };
+            format!("第{index}話。{body}")
+        })
+        .collect::<Vec<_>>();
+    let builder = || {
+        OfflineTranslator::builder(&root)
+            .memory(Memory::default())
+            .device(InferenceDevice::Cpu)
+            .cpu_budget(CpuBudget::from_requested(4))
+    };
+    let expected = builder()
+        .workers(64)
+        .parallel_policy(ParallelPolicy::Parallel)
+        .build()
+        .unwrap()
+        .translate_lines(&lines)
+        .unwrap();
+    let mut automatic = builder().build().unwrap();
+    let mut next = 0;
+    automatic
+        .translate_lines_to(&lines, |_, _| {}, &mut |index, text| {
+            assert_eq!(index, next);
+            assert_eq!(text, expected[index]);
+            next += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(next, lines.len());
 }
 
 #[test]

@@ -83,7 +83,4 @@ impl Runner {
     pub(super) fn correction(&self, text: &str) -> Option<std::borrow::Cow<'_, str>> {
         self.memory.resolve(text)
     }
-    pub(super) fn has_correction(&self, text: &str) -> bool {
-        self.memory.resolve(text).is_some()
-    }
 }

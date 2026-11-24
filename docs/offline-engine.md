@@ -1,8 +1,7 @@
-# Direct offline translation (0.3.3)
+# Direct offline translation
 
-Current CPU batching, 16/32/64-context controls, live TXT semantics and the
-supporting papers are documented in [CPU batching](cpu-batching.md). The default
-is 32 logical contexts on a bounded pool of available CPU threads. A 1,058-entry
+CPU batching, live TXT semantics and the supporting papers are documented in
+[CPU batching](cpu-batching.md). A 1,058-entry
 exact-headword glossary is embedded in 9,144 compressed bytes; source and
 regeneration instructions are in [`data/dictionary/`](../data/dictionary/README.md).
 
@@ -41,7 +40,7 @@ on Windows and `$XDG_DATA_HOME/SyousetuTranslate` (or `~/.local/share`) on Linux
 The portable release includes the model in `models/ja-ko`. Model inference uses no network
 client; a saved-HTML or local-file translation can run with networking disabled.
 Live novel downloads still need website access. Allow at least 2GB of free RAM,
-especially with 64 contexts;
+especially for larger context batches;
 immutable INT8 weights are shared. No original-weight conversion memory is used.
 `download --cache-html-dir PATH` saves the parsed work index as `work.json` and
 each original chapter as `1.html`, `2.html`, etc., for private local verification.
@@ -85,7 +84,7 @@ The reference is `P-JSL/gacha_pickup_calculator` commit
 `app/compute.rs`. The adapted parts are:
 
 * One shared Rayon compute pool, capped by available CPUs and a maximum budget
-  of 64, serves 1–64 logical contexts (default 32).
+  of 64, serves up to 256 explicitly requested logical contexts.
 * Shared immutable quantized weights; each runner owns its decoder/cross-attention
   caches. KV state resets after every segment, including failed generation.
 * Iteration-level refilling batches common linear operations while keeping
@@ -99,13 +98,14 @@ Probability convolution, FFT, random seeds and Monte Carlo aggregation are not
 translation algorithms and were not copied. Neural matrix operations are
 memory intensive, so more workers do not guarantee higher throughput.
 
-Default `parallel_mode=auto` measures the first sufficiently large body batch
-(at least 16 untranslated Japanese lines, four distinct calibration samples).
-It compares the complete sample outputs and chooses parallel only when they
-match exactly and parallel is at least 10% faster. Otherwise it retains serial
-execution. The choice is reused for the job; calibration does not alter model
-weights or user corrections. Short batches use serial. A CPU setting is a maximum,
-not a requirement to occupy every core.
+Default `parallel_mode=auto` batches multiple distinct untranslated rows. A
+single new row uses one CPU runner. The automatic mode makes this choice from
+each batch's pending work without running calibration translations at startup.
+With a budget of at least four CPUs, the automatic worker count provides up to
+128 decoder contexts and stages up to 32 upcoming source rows. Encoding takes
+groups of up to 2,048 source tokens. Active and staged contexts reserve their
+source length and generation limit against the old 64-context worst-case token
+budget. Automatic worker counts on smaller CPU budgets and CUDA stay at 32.
 
 Use `--parallel-mode serial|parallel` for a controlled comparison. The GUI exposes
 the same three modes. Explicit parallel mode remains bounded by `--jobs`.

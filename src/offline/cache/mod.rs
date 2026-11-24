@@ -88,9 +88,6 @@ impl Cache {
         cache.disk = Some(store);
         Ok(cache)
     }
-    pub(super) fn contains(&self, source: &str) -> bool {
-        self.values.contains_key(source)
-    }
     pub(super) fn get(&self, source: &str) -> Option<String> {
         let value = self.values.get(source);
         if value.is_some() {
@@ -128,15 +125,6 @@ impl Cache {
         if self.pending.len() >= 512 {
             self.flush_best_effort();
         }
-    }
-    pub(super) fn evict(&mut self, sources: &[String]) {
-        for source in sources {
-            if let Some(value) = self.values.remove(source) {
-                self.bytes -= cost(source, &value);
-            }
-            self.pending.remove(source);
-        }
-        self.order.retain(|key| !sources.contains(key));
     }
     pub(super) fn stats(&self) -> CacheStats {
         CacheStats {
@@ -203,7 +191,6 @@ mod tests {
         assert_eq!(c.get("a"), None);
         assert_eq!(c.get("b"), Some("3".into()));
         assert_eq!(c.values.len(), 2);
-        c.evict(&["b".into()]);
         c.insert("d", "5".into());
         assert_eq!(c.get("c"), Some("4".into()));
         c.insert(&"x".repeat(4097), "too big".into());

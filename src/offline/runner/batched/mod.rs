@@ -2,6 +2,7 @@
 //! Logical contexts share a bounded Rayon pool, weights and tokenizer. Each
 //! context owns its decoder KV cache, token history and original source index.
 mod plan;
+mod prefill;
 use super::{
     generation::{repeated_trigram_tokens, MAX_GENERATED_TOKENS},
     Runner,
@@ -12,11 +13,13 @@ use crate::offline::{
 };
 use anyhow::Result;
 use plan::{Cursor, State};
+use prefill::Intake;
 
 pub(in crate::offline) fn translate(
     runners: &mut [Runner],
     input: &[String],
     pool: &rayon::ThreadPool,
+    cpu_token_limit: Option<usize>,
     mut emit: impl FnMut(usize, String) -> Result<()>,
 ) -> Result<()> {
     if input.is_empty() {
@@ -32,7 +35,7 @@ pub(in crate::offline) fn translate(
         }
         return Ok(());
     }
-    let result = run(runners, input, pool, &mut emit);
+    let result = run(runners, input, pool, cpu_token_limit, &mut emit);
     for runner in runners {
         runner.model.reset();
     }
@@ -42,24 +45,24 @@ fn run(
     runners: &mut [Runner],
     input: &[String],
     pool: &rayon::ThreadPool,
+    cpu_token_limit: Option<usize>,
     emit: &mut dyn FnMut(usize, String) -> Result<()>,
 ) -> Result<()> {
     let count = runners.len().min(input.len());
     let mut cursors: Vec<Option<Cursor>> = (0..count).map(|_| None).collect();
     let mut device_decoder = runners[0].model.device_decoder(count);
-    let mut pending = 0;
+    let mut intake = Intake::new(input);
     loop {
         // Refill immediately after completion. Input-order admission lets the
         // streaming sink expose the contiguous translated prefix promptly.
         for slot in 0..count {
             loop {
                 if cursors[slot].is_none() {
-                    if pending == input.len() {
+                    let Some(cursor) = intake.take(&runners[slot])? else {
                         break;
-                    }
+                    };
                     runners[slot].model.reset();
-                    cursors[slot] = Some(Cursor::new(pending, &input[pending], &runners[slot])?);
-                    pending += 1;
+                    cursors[slot] = Some(cursor);
                 }
                 let cursor = cursors[slot].as_mut().expect("admitted cursor");
                 cursor.advance();
@@ -73,56 +76,27 @@ fn run(
         if cursors.iter().all(Option::is_none) {
             break;
         }
-        let missing = cursors
-            .iter()
-            .enumerate()
-            .filter_map(|(index, cursor)| {
-                cursor
-                    .as_ref()?
-                    .part
-                    .as_ref()
-                    .filter(|part| part.state.is_none())
-                    .map(|_| index)
-            })
-            .collect::<Vec<_>>();
-        let ready = cursors
+        let (ready, missing) = cursors
             .iter()
             .flatten()
-            .filter(|cursor| {
-                cursor
-                    .part
-                    .as_ref()
-                    .is_some_and(|part| part.state.is_some())
-            })
-            .count();
+            .filter_map(|cursor| cursor.part.as_ref())
+            .fold((0, 0), |(ready, missing), part| {
+                (
+                    ready + usize::from(part.state.is_some()),
+                    missing + usize::from(part.state.is_none()),
+                )
+            });
         let prefill_threshold = (count / 4).clamp(1, 32);
-        if !missing.is_empty() && (missing.len() >= prefill_threshold || ready <= count / 2) {
-            let sources = missing
-                .iter()
-                .map(|&slot| {
-                    let part = cursors[slot].as_ref().unwrap().part.as_ref().unwrap();
-                    let tokens = &part.prepared.encoded.tokens;
-                    let mut source = Vec::with_capacity(tokens.len() + 2);
-                    source.push(runners[slot].tokenizer.ko);
-                    source.extend_from_slice(tokens);
-                    source.push(runners[slot].config.eos_token_id);
-                    source
-                })
-                .collect::<Vec<_>>();
-            let encoded = pool.install(|| runners[0].model.encode_many(&sources))?;
-            for (slot, encoder) in missing.into_iter().zip(encoded) {
-                let part = cursors[slot].as_mut().unwrap().part.as_mut().unwrap();
-                let limit = (part.prepared.encoded.tokens.len() * 4 + 32)
-                    .clamp(64, MAX_GENERATED_TOKENS)
-                    .min(runners[slot].config.max_position_embeddings - 2);
-                part.state = Some(State {
-                    encoder,
-                    input: runners[slot].config.decoder_start_token_id,
-                    past: 0,
-                    output: Vec::new(),
-                    limit,
-                });
-            }
+        let stage_ahead =
+            cpu_token_limit.is_some() && ready != 0 && intake.can_stage(prefill_threshold);
+        if missing != 0 && (missing >= prefill_threshold || ready <= count / 2 || stage_ahead) {
+            intake.encode(
+                &mut cursors,
+                &runners[0],
+                pool,
+                cpu_token_limit,
+                stage_ahead,
+            )?;
         }
         let active = cursors
             .iter()
@@ -131,6 +105,7 @@ fn run(
                 cursor.as_ref()?.part.as_ref()?.state.as_ref().map(|_| slot)
             })
             .collect::<Vec<_>>();
+        anyhow::ensure!(!active.is_empty(), "번역 배치의 토큰 예산이 너무 작습니다");
         let states = active
             .iter()
             .map(|&slot| {
