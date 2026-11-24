@@ -38,19 +38,30 @@ impl Weights {
         let mut names = content.tensor_infos.keys().cloned().collect::<Vec<_>>();
         names.sort();
         for name in names {
-            let tensor = content.tensor(&mut file, &name, &Device::Cpu)?;
-            if tensor.rank() == 2 {
+            let info = &content.tensor_infos[&name];
+            if info.shape.rank() == 2 {
                 anyhow::ensure!(
-                    tensor.dtype() == GgmlDType::Q8_0,
+                    info.ggml_dtype == GgmlDType::Q8_0,
                     "INT8이 아닌 행렬: {name}"
                 );
                 if device.is_cpu() {
+                    let tensor = content.tensor(&mut file, &name, device)?;
                     quantized.insert(name, Arc::new(tensor));
                 } else {
-                    let weights = tensor.dequantize_f16(&Device::Cpu)?.to_device(device)?;
+                    // Transfer the verified Q8 blocks and expand them once on CUDA.
+                    let source = if device.is_cuda() {
+                        device
+                    } else {
+                        &Device::Cpu
+                    };
+                    let weights = content
+                        .tensor(&mut file, &name, source)?
+                        .dequantize_f16(source)?
+                        .to_device(device)?;
                     gpu_matrices.insert(name, weights);
                 }
             } else {
+                let tensor = content.tensor(&mut file, &name, &Device::Cpu)?;
                 floats.insert(name, tensor.dequantize(&Device::Cpu)?.to_device(device)?);
             }
         }

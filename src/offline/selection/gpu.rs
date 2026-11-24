@@ -5,13 +5,34 @@ use candle_core::{DType, Device, Tensor};
 use std::collections::HashSet;
 
 #[derive(Clone)]
-pub(in crate::offline) struct TokenIds(Tensor);
+pub(in crate::offline) struct TokenIds {
+    ids: Tensor,
+    tile: Option<usize>,
+}
 impl TokenIds {
     pub(in crate::offline) fn new(width: usize, device: &Device) -> candle_core::Result<Self> {
         let end = u32::try_from(width)
             .map_err(|_| candle_core::Error::Msg("selection vocabulary is too large".into()))?;
-        Ok(Self(Tensor::arange(0u32, end, device)?))
+        Ok(Self {
+            ids: Tensor::arange(0u32, end, device)?,
+            tile: tile_width(width),
+        })
     }
+
+    fn tile_width(&self, width: usize) -> Option<usize> {
+        if self.ids.elem_count() == width {
+            self.tile
+        } else {
+            tile_width(width)
+        }
+    }
+}
+
+fn tile_width(width: usize) -> Option<usize> {
+    // Use a divisor so all tiles share the original logits allocation.
+    (width >= 16_384)
+        .then(|| (512..=1024).rev().find(|&tile| width.is_multiple_of(tile)))
+        .flatten()
 }
 
 pub(in crate::offline) fn select_rows(
@@ -20,8 +41,7 @@ pub(in crate::offline) fn select_rows(
     eos: u32,
     blocked: &[HashSet<u32>],
 ) -> Result<Vec<u32>> {
-    let width = scores.dim(1)?.min(vocab);
-    let ids = TokenIds::new(width, scores.device())?;
+    let ids = TokenIds::new(scores.dim(1)?, scores.device())?;
     select_with_ids(scores, vocab, eos, blocked, &ids)
 }
 
@@ -40,33 +60,44 @@ pub(in crate::offline) fn select_with_ids(
         "GPU selection requires F16 or F32 logits"
     );
     anyhow::ensure!(width > 0, "모델이 유효한 출력 토큰을 생성하지 못했습니다");
-    let sentinel = u32::try_from(width).context("selection vocabulary is too large")?;
+    let tiled_columns = ids
+        .tile_width(columns)
+        .filter(|&tile| columns <= ids.ids.elem_count() && columns - width < tile);
+    // The pinned head includes language IDs beyond the tokenizer vocabulary.
+    // Keep its divisible row width and exclude that short suffix before reducing.
+    let (scan_width, tile) = match tiled_columns {
+        Some(tile) => (columns, Some(tile)),
+        None => (width, ids.tile_width(width)),
+    };
+    let sentinel = u32::try_from(scan_width).context("selection vocabulary is too large")?;
     let status_limit = sentinel
         .checked_mul(2)
         .context("selection vocabulary is too large")?;
-    let count = rows.checked_mul(width).context("selection size overflow")?;
+    let count = rows
+        .checked_mul(scan_width)
+        .context("selection size overflow")?;
     u32::try_from(count).context("selection batch is too large")?;
     let device = scores.device();
-    let ids = ids.0.narrow(0, 0, width)?;
+    let ids = ids.ids.narrow(0, 0, scan_width)?;
     let excluded = Tensor::new(f32::NEG_INFINITY, device)?.to_dtype(scores.dtype())?;
-    let scores = scores.narrow(1, 0, width)?;
+    let scores = scores.narrow(1, 0, scan_width)?;
     // +inf and NaN fail this comparison. -inf is already the exclusion value.
     let flat = scores
         .lt(f32::INFINITY)?
-        .where_cond(&scores, &excluded.broadcast_as((rows, width))?)?
+        .where_cond(&scores, &excluded.broadcast_as((rows, scan_width))?)?
         .flatten_all()?;
 
     let mut indices = Vec::new();
     for (row, banned) in blocked.iter().enumerate() {
-        let offset = (row * width) as u32;
+        let offset = (row * scan_width) as u32;
         indices.extend(
             banned
                 .iter()
-                .filter(|&&id| id < sentinel)
+                .filter(|&&id| (id as usize) < width)
                 .map(|&id| offset + id),
         );
         indices.extend(
-            (0..sentinel.min(4))
+            (0..width.min(4) as u32)
                 .filter(|id| *id != eos && !banned.contains(id))
                 .map(|id| offset + id),
         );
@@ -79,15 +110,22 @@ pub(in crate::offline) fn select_with_ids(
         // flat owns a fresh allocation, so input logits remain unchanged.
         flat.scatter_set(&indices, &values, 0)?;
     }
-    let masked = flat.reshape((rows, width))?;
+    let masked = flat.reshape((rows, scan_width))?;
     drop(flat);
+    if width < scan_width {
+        let tail = excluded
+            .broadcast_as((rows, scan_width - width))?
+            .contiguous()?;
+        masked.slice_set(&tail, 1, width)?;
+    }
     let absent = Tensor::new(sentinel, device)?;
-    let maximum = masked.max_keepdim(1)?;
-    let first = lowest_id(&masked.broadcast_eq(&maximum)?, &ids, &absent)?;
+    let (maximum, first) = maxima_and_first(&masked, &ids, &absent, tile)?;
     // A width offset marks zero maxima. One small readback also reports
     // exhausted rows, without any scores leaving the device.
     let maximum = maximum.squeeze(1)?;
-    let valid = maximum.gt(f32::NEG_INFINITY)?.mul(&first.lt(sentinel)?)?;
+    let valid = maximum
+        .gt(f32::NEG_INFINITY)?
+        .mul(&first.lt(width as u32)?)?;
     let first = maximum
         .eq(0f32)?
         .where_cond(&first.broadcast_add(&absent)?, &first)?;
@@ -125,6 +163,41 @@ pub(in crate::offline) fn select_with_ids(
         }
     }
     Ok(result)
+}
+
+fn maxima_and_first(
+    scores: &Tensor,
+    ids: &Tensor,
+    absent: &Tensor,
+    tile: Option<usize>,
+) -> candle_core::Result<(Tensor, Tensor)> {
+    let Some(tile) = tile else {
+        let maximum = scores.max_keepdim(1)?;
+        let first = lowest_id(&scores.broadcast_eq(&maximum)?, ids, absent)?;
+        return Ok((maximum, first));
+    };
+    let (rows, width) = scores.dims2()?;
+    let tiles = width / tile;
+    let maxima = scores.reshape((rows, tiles, tile))?.max(2)?;
+    let maximum = maxima.max_keepdim(1)?;
+    // Candle's CUDA argmax can break ties across lanes out of index order.
+    // Compare the tile maxima, then compare only the earliest winning tile.
+    let device = scores.device();
+    let first_tile = lowest_id(
+        &maxima.broadcast_eq(&maximum)?,
+        &ids.narrow(0, 0, tiles)?,
+        &Tensor::new(tiles as u32, device)?,
+    )?;
+    let row_offsets = Tensor::arange_step(0u32, (rows * tiles) as u32, tiles as u32, device)?;
+    let winners = scores
+        .reshape((rows * tiles, tile))?
+        .index_select(&(&row_offsets + &first_tile)?, 0)?;
+    let local = lowest_id(
+        &winners.broadcast_eq(&maximum)?,
+        &ids.narrow(0, 0, tile)?,
+        &Tensor::new(tile as u32, device)?,
+    )?;
+    Ok((maximum, (&first_tile.affine(tile as f64, 0.)? + &local)?))
 }
 
 fn lowest_id(eligible: &Tensor, ids: &Tensor, absent: &Tensor) -> candle_core::Result<Tensor> {
@@ -289,10 +362,54 @@ mod tests {
         compare_half_logits(&Device::Cpu);
     }
 
+    fn compare_tiled_logits(device: &Device) {
+        // Pinned SMaLL-100 vocabulary. Include ties across reduction lanes
+        // and tiles, signed zeros across tiles, and invalid/banned maxima.
+        let width = 128_112;
+        let vocab = 128_004;
+        let tile = tile_width(width).unwrap();
+        let mut rows = vec![vec![-1f32; width]; 4];
+        rows[0][3] = 100.;
+        rows[0][8] = 4.;
+        rows[0][32] = 4.;
+        rows[0][tile + 8] = 4.;
+        rows[1][2] = -0.;
+        rows[1][vocab - 1] = 0.;
+        rows[1][width - 1] = 0.;
+        rows[2][4] = f32::INFINITY;
+        rows[2][5] = f32::NAN;
+        rows[2][tile] = 100.;
+        rows[2][vocab - 1] = 2.;
+        rows[2][width - 1] = 10.;
+        rows[3][tile - 1] = 5.;
+        rows[3][tile] = 5.;
+        let blocked = [
+            HashSet::new(),
+            HashSet::new(),
+            [tile as u32].into(),
+            [(tile - 1) as u32].into(),
+        ];
+        let logits = Tensor::new(rows.clone(), device).unwrap();
+        for width in [vocab, width] {
+            let expected = reference(&rows, width, 2, &blocked).unwrap();
+            for dtype in [DType::F32, DType::F16] {
+                let logits = logits.to_dtype(dtype).unwrap();
+                assert_eq!(select_rows(&logits, width, 2, &blocked).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn tiled_projection_preserves_whole_vocabulary_ordering() {
+        compare_tiled_logits(&Device::Cpu);
+    }
+
     #[cfg(feature = "cuda")]
     #[test]
     #[ignore = "requires a real CUDA device and driver"]
     fn cuda_half_greedy_selection_matches_reference_on_device() {
-        compare_half_logits(&Device::new_cuda(0).unwrap());
+        let device = Device::new_cuda(0).unwrap();
+        compare_half_logits(&device);
+        compare_tiled_logits(&device);
     }
 }
